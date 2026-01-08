@@ -146,12 +146,31 @@ def load_safety_report(report_path: Path) -> List[Dict]:
         print(f"Safety report not found at {report_path}")
         return []
 
-    with open(report_path) as f:
-        data = json.load(f)
-
-    # Safety CLI output format
-    vulnerabilities = data.get("vulnerabilities", [])
-    return vulnerabilities
+    try:
+        with open(report_path) as f:
+            content = f.read().strip()
+            
+            # Handle empty file
+            if not content:
+                print("Safety report is empty - no vulnerabilities detected or scan failed")
+                return []
+            
+            # Parse JSON
+            data = json.loads(content)
+            
+        # Safety CLI output format
+        vulnerabilities = data.get("vulnerabilities", [])
+        print(f"Successfully parsed {len(vulnerabilities)} vulnerabilities from report")
+        return vulnerabilities
+        
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON from {report_path}: {e}")
+        print("The scan file may be corrupted, invalid, or Safety CLI encountered an error")
+        print("This can happen if Safety CLI API credits are exhausted or the scan failed")
+        return []
+    except Exception as e:
+        print(f"Unexpected error loading safety report: {e}")
+        return []
 
 
 def filter_by_severity(vulns: List[Dict], threshold: str) -> List[Dict]:
@@ -190,12 +209,17 @@ def main():
     vulnerabilities = load_safety_report(report_path)
 
     if not vulnerabilities:
-        print("No vulnerabilities found in report")
+        print("No vulnerabilities found or report could not be parsed")
+        print("Exiting gracefully - this is normal if no vulnerabilities exist or scan failed")
         return
 
     # Filter by severity
     filtered_vulns = filter_by_severity(vulnerabilities, severity_threshold)
     print(f"Found {len(filtered_vulns)} vulnerabilities meeting severity threshold: {severity_threshold}")
+
+    if not filtered_vulns:
+        print("No vulnerabilities meet the severity threshold")
+        return
 
     # Create GitHub issues
     issue_creator = GitHubIssueCreator(github_token, github_repo, copilot_agent)
@@ -209,7 +233,7 @@ def main():
         except Exception as e:
             print(f"Error creating issue: {e}")
 
-    print(f"Created {created_count} new security issues")
+    print(f"✅ Successfully created {created_count} new security issues")
 
 
 if __name__ == "__main__":
