@@ -1,0 +1,60 @@
+name: 'SafetyCLI Self-Healing Action'
+description: 'Self-healing security automation for Python projects using Safety CLI. Automatically creates GitHub issues for CVEs and assigns them to Copilot for AI-powered remediation.'
+author: 'kmesiab'
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  github_token:
+    description: 'GitHub token for creating issues and PRs'
+    required: true
+  safety_api_key:
+    description: 'Safety CLI API key for vulnerability scanning'
+    required: false
+  copilot_agent:
+    description: 'GitHub Copilot agent username to assign issues to'
+    required: false
+    default: 'copilot'
+  project_path:
+    description: 'Path to the Python project to scan'
+    required: false
+    default: '.'
+  severity_threshold:
+    description: 'Minimum severity level to create issues for (low, medium, high, critical)'
+    required: false
+    default: 'medium'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+        
+    - name: Install Safety CLI
+      shell: bash
+      run: |
+        pip install safety
+        
+    - name: Run Safety CLI scan
+      id: safety-scan
+      shell: bash
+      env:
+        SAFETY_API_KEY: ${{ inputs.safety_api_key }}
+      run: |
+        cd ${{ inputs.project_path }}
+        safety check --json --output safety-report.json || true
+        
+    - name: Process vulnerabilities and create issues
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        COPILOT_AGENT: ${{ inputs.copilot_agent }}
+        SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+      run: |
+        python ${{ github.action_path }}/scripts/process_vulnerabilities.py
