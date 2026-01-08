@@ -1,0 +1,2 @@
+# Python requirements for SafetyCLI Self-Healing Action
+requests>=2.31.0
