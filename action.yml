@@ -49,8 +49,7 @@ runs:
         SAFETY_API_KEY: ${{ inputs.safety_api_key }}
       run: |
         cd ${{ inputs.project_path }}
-            safety scan --output json > safety-report.json || true        
-    - name: Process vulnerabilities and create issues
+            safety --stage cicd scan --output json --continue-on-error > safety-report.json || true    - name: Process vulnerabilities and create issues
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
