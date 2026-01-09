@@ -50,7 +50,8 @@ runs:
       run: |
         cd ${{ inputs.project_path }}
             safety --stage cicd scan --output json --continue-on-error > safety-report.json || true
-      - name: Process vulnerabilities and create issues      
+            
+        - name: Process vulnerabilities and create issues
         shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
