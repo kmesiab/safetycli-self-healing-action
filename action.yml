@@ -56,6 +56,6 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         COPILOT_AGENT: ${{ inputs.copilot_agent }}
-        SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
-      run: |
+        SEVERITY_THRESHOLD: ${{ inputs.  severity_threshold }}
+      run: 
         python ${{ github.action_path }}/scripts/process_vulnerabilities.py
