@@ -51,7 +51,7 @@ runs:
         cd ${{ inputs.project_path }}
             safety --stage cicd scan --output json --continue-on-error > safety-report.json || true
       - name: Process vulnerabilities and create issues      
-          shell: bash
+        shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         COPILOT_AGENT: ${{ inputs.copilot_agent }}
