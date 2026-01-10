@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -18,6 +19,7 @@ class GitHubIssueCreator:
         self.repo = repo
         self.copilot_agent = copilot_agent
         self.api_base = "https://api.github.com"
+        self.timeout = 30  # seconds
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
@@ -43,8 +45,19 @@ class GitHubIssueCreator:
             "labels": labels,
         }
 
-        response = requests.post(url, headers=self.headers, json=data)
-        response.raise_for_status()
+        try:
+            response = requests.post(url, headers=self.headers, json=data, timeout=self.timeout)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            # Handle rate limiting
+            if e.response.status_code == 403 and 'rate limit' in e.response.text.lower():
+                print("Rate limit hit, waiting 60 seconds...")
+                time.sleep(60)
+                response = requests.post(url, headers=self.headers, json=data, timeout=self.timeout)
+                response.raise_for_status()
+            else:
+                raise
+
         issue_number = response.json()["number"]
         print(f"Created issue #{issue_number}: {title}")
 
@@ -55,23 +68,25 @@ class GitHubIssueCreator:
 
     def _issue_exists(self, title: str) -> bool:
         """Check if an issue with the same title already exists."""
-        url = f"{self.api_base}/repos/{self.repo}/issues"
-        params = {"state": "all", "per_page": 100}
+        # Use GitHub Search API for efficient searching across all issues
+        url = f"{self.api_base}/search/issues"
+        # Escape quotes in title for search query
+        escaped_title = title.replace('"', '\\"')
+        params = {
+            "q": f'repo:{self.repo} is:issue "{escaped_title}" in:title'
+        }
 
-        response = requests.get(url, headers=self.headers, params=params)
+        response = requests.get(url, headers=self.headers, params=params, timeout=self.timeout)
         response.raise_for_status()
-
-        for issue in response.json():
-            if issue["title"] == title:
-                return True
-        return False
+        
+        return response.json()["total_count"] > 0
 
     def _assign_issue(self, issue_number: int) -> None:
         """Assign issue to Copilot agent."""
         url = f"{self.api_base}/repos/{self.repo}/issues/{issue_number}"
         data = {"assignees": [self.copilot_agent]}
 
-        response = requests.patch(url, headers=self.headers, json=data)
+        response = requests.patch(url, headers=self.headers, json=data, timeout=self.timeout)
         response.raise_for_status()
         print(f"Assigned issue #{issue_number} to @{self.copilot_agent}")
 
@@ -115,7 +130,7 @@ class GitHubIssueCreator:
         else:
             body += f"Please investigate and upgrade `{package}` to a secure version.\n\n"
 
-        body += """### Steps for @copilot
+        body += f"""### Steps for @copilot
 
 1. Update the `{package}` dependency to a secure version
 2. Update any related dependencies if needed
@@ -230,8 +245,12 @@ def main():
             issue_num = issue_creator.create_issue(vuln)
             if issue_num:
                 created_count += 1
+        except requests.exceptions.RequestException as e:
+            print(f"Error creating issue for {vuln.get('package_name', 'unknown')}: {e}")
+            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                print(f"Response: {e.response.text}")
         except Exception as e:
-            print(f"Error creating issue: {e}")
+            print(f"Unexpected error creating issue for {vuln.get('package_name', 'unknown')}: {e}")
 
     print(f"✅ Successfully created {created_count} new security issues")
 
