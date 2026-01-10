@@ -96,9 +96,13 @@ class GitHubIssueCreator:
         url = f"{self.api_base}/repos/{self.repo}/issues/{issue_number}"
         data = {"assignees": [self.copilot_agent]}
 
-        response = requests.patch(url, headers=self.headers, json=data, timeout=self.timeout)
-        response.raise_for_status()
-        print(f"Assigned issue #{issue_number} to @{self.copilot_agent}")
+        try:
+            response = requests.patch(url, headers=self.headers, json=data, timeout=self.timeout)
+            response.raise_for_status()
+            print(f"Assigned issue #{issue_number} to @{self.copilot_agent}")
+        except requests.exceptions.RequestException as e:
+            print(f"Warning: Failed to assign issue #{issue_number} to @{self.copilot_agent}: {e}")
+            print(f"Issue #{issue_number} was created successfully but assignment can be done manually")
 
     def _generate_title(self, vuln: Dict) -> str:
         """Generate issue title from vulnerability data."""
