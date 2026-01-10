@@ -12,10 +12,18 @@ inputs:
   safety_api_key:
     description: 'Safety CLI API key for vulnerability scanning'
     required: false
+  assign_to_copilot:
+    description: 'Whether to attempt assigning issues to GitHub Copilot agent'
+    required: false
+    default: 'true'
   copilot_agent:
     description: 'GitHub Copilot agent username to assign issues to'
     required: false
     default: 'copilot'
+  fallback_assignee:
+    description: 'Fallback GitHub username to assign issues to if Copilot assignment fails'
+    required: false
+    default: ''
   project_path:
     description: 'Path to the Python project to scan'
     required: false
@@ -39,8 +47,8 @@ runs:
     - name: Install Safety CLI
       shell: bash
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install -r ${{ github.action_path }}/scripts/requirements.txt
+        pip install safety
+        pip install -r ${{ github.action_path }}/scripts/requirements.txt
         
     - name: Run Safety CLI scan
       id: safety-scan
@@ -55,7 +63,9 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
+        ASSIGN_TO_COPILOT: ${{ inputs.assign_to_copilot }}
         COPILOT_AGENT: ${{ inputs.copilot_agent }}
+        FALLBACK_ASSIGNEE: ${{ inputs.fallback_assignee }}
         SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
       run: |
         python ${{ github.action_path }}/scripts/process_vulnerabilities.py

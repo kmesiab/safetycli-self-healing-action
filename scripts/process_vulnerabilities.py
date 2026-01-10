@@ -14,10 +14,14 @@ import requests
 class GitHubIssueCreator:
     """Create and manage GitHub issues for security vulnerabilities."""
 
-    def __init__(self, token: str, repo: str, copilot_agent: str):
+    def __init__(self, token: str, repo: str, assign_to_copilot: bool = True, 
+                 copilot_agent: str = "copilot", fallback_assignee: str = ""):
         self.token = token
         self.repo = repo
+        self.assign_to_copilot = assign_to_copilot
         self.copilot_agent = copilot_agent
+        self.fallback_assignee = fallback_assignee
+        self.copilot_available = None  # Cache Copilot availability check
         self.api_base = "https://api.github.com"
         self.timeout = 30  # seconds
         self.headers = {
@@ -92,16 +96,61 @@ class GitHubIssueCreator:
         return response.json()["total_count"] > 0
 
     def _assign_issue(self, issue_number: int) -> None:
-        """Assign issue to Copilot agent."""
+        """Assign issue to Copilot agent or fallback assignee."""
+        # Skip assignment if disabled
+        if not self.assign_to_copilot and not self.fallback_assignee:
+            print(f"Issue #{issue_number} created without assignment (assignment disabled)")
+            return
+
+        # Try Copilot first if enabled
+        if self.assign_to_copilot:
+            if self._try_assign_to_copilot(issue_number):
+                return
+        
+        # Try fallback assignee if configured
+        if self.fallback_assignee:
+            self._try_assign_to_fallback(issue_number)
+        else:
+            print(f"Issue #{issue_number} created without assignment (no fallback configured)")
+
+    def _try_assign_to_copilot(self, issue_number: int) -> bool:
+        """Try to assign issue to Copilot. Returns True if successful."""
         url = f"{self.api_base}/repos/{self.repo}/issues/{issue_number}"
         data = {"assignees": [self.copilot_agent]}
 
         try:
             response = requests.patch(url, headers=self.headers, json=data, timeout=self.timeout)
             response.raise_for_status()
-            print(f"Assigned issue #{issue_number} to @{self.copilot_agent}")
+            print(f"✅ Assigned issue #{issue_number} to @{self.copilot_agent}")
+            self.copilot_available = True
+            return True
+        except requests.exceptions.HTTPError as e:
+            # Detect "Copilot not assignable" scenarios
+            if e.response.status_code == 422:
+                error_message = e.response.json().get('message', '').lower()
+                if 'not found' in error_message or 'does not exist' in error_message:
+                    print(f"⚠️  Copilot agent '@{self.copilot_agent}' not found or not assignable")
+                    self.copilot_available = False
+                else:
+                    print(f"⚠️  Failed to assign to @{self.copilot_agent}: {e.response.json().get('message', str(e))}")
+            else:
+                print(f"⚠️  Failed to assign issue #{issue_number} to @{self.copilot_agent}: {e}")
+            return False
         except requests.exceptions.RequestException as e:
-            print(f"Warning: Failed to assign issue #{issue_number} to @{self.copilot_agent}: {e}")
+            print(f"⚠️  Network error assigning to @{self.copilot_agent}: {e}")
+            return False
+
+    def _try_assign_to_fallback(self, issue_number: int) -> None:
+        """Try to assign issue to fallback assignee."""
+        url = f"{self.api_base}/repos/{self.repo}/issues/{issue_number}"
+        data = {"assignees": [self.fallback_assignee]}
+
+        try:
+            response = requests.patch(url, headers=self.headers, json=data, timeout=self.timeout)
+            response.raise_for_status()
+            print(f"✅ Assigned issue #{issue_number} to fallback assignee @{self.fallback_assignee}")
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️  Failed to assign to fallback @{self.fallback_assignee}: {e}")
             print(f"Issue #{issue_number} was created successfully but assignment can be done manually")
 
     def _generate_title(self, vuln: Dict) -> str:
@@ -150,6 +199,10 @@ class GitHubIssueCreator:
 2. Update any related dependencies if needed
 3. Run tests to ensure compatibility
 4. Create a pull request with the security fix
+
+---
+
+**ℹ️ Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
 
 **Provenance**: This issue was automatically created by SafetyCLI Self-Healing Action based on vulnerability scan results.
 """
@@ -222,7 +275,9 @@ def main():
     # Get environment variables
     github_token = os.getenv("GITHUB_TOKEN")
     github_repo = os.getenv("GITHUB_REPOSITORY")
+    assign_to_copilot = os.getenv("ASSIGN_TO_COPILOT", "true").lower() in ("true", "1", "yes")
     copilot_agent = os.getenv("COPILOT_AGENT", "copilot")
+    fallback_assignee = os.getenv("FALLBACK_ASSIGNEE", "")
     severity_threshold = os.getenv("SEVERITY_THRESHOLD", "medium")
 
     if not github_token:
@@ -251,7 +306,13 @@ def main():
         return
 
     # Create GitHub issues
-    issue_creator = GitHubIssueCreator(github_token, github_repo, copilot_agent)
+    issue_creator = GitHubIssueCreator(
+        token=github_token,
+        repo=github_repo,
+        assign_to_copilot=assign_to_copilot,
+        copilot_agent=copilot_agent,
+        fallback_assignee=fallback_assignee
+    )
 
     created_count = 0
     for vuln in filtered_vulns:
