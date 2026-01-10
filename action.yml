@@ -1,5 +1,5 @@
 name: 'SafetyCLI Self-Healing Action'
-description: 'Self-healing security automation for Python projects using Safety CLI. Automatically creates GitHub issues for CVEs and assigns them to Copilot for AI-powered remediation.'
+description: 'Self-healing security automation for Python projects using Safety CLI. Auto creates issues for CVEs and assigns them to Copilot for AI remediation.'
 author: 'kmesiab'
 branding:
   icon: 'shield'
