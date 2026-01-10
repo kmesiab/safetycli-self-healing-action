@@ -40,7 +40,7 @@ runs:
       shell: bash
       run: |
         pip install safety
-                pip install -r ${{ github.action_path }}/scripts/requirements.txt
+        pip install -r ${{ github.action_path }}/scripts/requirements.txt
         
     - name: Run Safety CLI scan
       id: safety-scan
@@ -49,13 +49,13 @@ runs:
         SAFETY_API_KEY: ${{ inputs.safety_api_key }}
       run: |
         cd ${{ inputs.project_path }}
-            safety --stage cicd scan --output json --continue-on-error > safety-report.json || true
+        safety --stage cicd scan --output json --continue-on-error > safety-report.json || true
             
-        - name: Process vulnerabilities and create issues
-        shell: bash
+    - name: Process vulnerabilities and create issues
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         COPILOT_AGENT: ${{ inputs.copilot_agent }}
-        SEVERITY_THRESHOLD: ${{ inputs.  severity_threshold }}
-      run:  |
+        SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+      run: |
         python ${{ github.action_path }}/scripts/process_vulnerabilities.py
