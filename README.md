@@ -13,6 +13,7 @@ Self-healing security automation for Python projects using Safety CLI. This GitH
 - **Severity Filtering**: Configurable severity threshold to focus on critical issues
 - **Duplicate Prevention**: Checks for existing issues before creating new ones
 - **Rich Context**: Includes CVE details, severity levels, and recommended fixes
+- - **Intelligent Assignment**: Automatically detects Copilot availability and falls back to human assignees
 
 ## 📋 Prerequisites
 
@@ -87,6 +88,7 @@ jobs:
 
 ## ⚙️ Configuration
 
+          assign_to_copilot: 'true'
 ### Inputs
 
 | Input | Description | Required | Default |
@@ -96,10 +98,13 @@ jobs:
 | `copilot_agent` | GitHub Copilot agent username to assign issues | No | `copilot` |
 | `project_path` | Path to Python project to scan | No | `.` |
 | `severity_threshold` | Minimum severity: `low`, `medium`, `high`, `critical` | No | `medium` |
+| `assign_to_copilot` | Enable/disable Copilot assignment (true/false) | No | `true` |
+| `fallback_assignee` | Fallback GitHub username if Copilot assignment fails | No | `''` (empty) |
 
 ### Safety API Key
 
 While not required, using a Safety API key provides:
+
 - More detailed vulnerability information
 - Higher rate limits
 - Access to premium vulnerability database
@@ -116,6 +121,37 @@ Get your API key from [Safety CLI](https://safetycli.com/) and add it as a repos
    - Adds appropriate labels (security, dependencies, priority)
 4. **Assign to Copilot**: Automatically assigns the issue to GitHub Copilot
 5. **AI Remediation**: Copilot analyzes the issue and creates a PR with fixes
+
+6. ## 🔍 Copilot Detection & Fallback
+
+The action includes intelligent Copilot detection to ensure issues are properly assigned:
+
+### How It Works
+
+1. **Copilot Detection**: Before assigning issues, the action checks if GitHub Copilot is available in your repository by:
+   - Querying the GitHub API for available assignees
+   - Verifying the configured `copilot_agent` username exists
+   
+2. **Assignment Logic**:
+   - If `assign_to_copilot` is `true` AND Copilot is detected → assigns to Copilot
+   - If `assign_to_copilot` is `true` BUT Copilot is NOT detected → falls back to `fallback_assignee` (if provided)
+   - If no fallback is provided → creates unassigned issue
+
+3. **Fallback Configuration**: Use the `fallback_assignee` input to specify a GitHub username that will receive issues when Copilot is unavailable:
+
+```yaml
+with:
+  assign_to_copilot: 'true'
+  copilot_agent: 'copilot'
+  fallback_assignee: 'security-team'  # Receives issues if Copilot unavailable
+```
+
+### Benefits
+
+- **Reliability**: Issues always get assigned even if Copilot is temporarily unavailable
+- **Flexibility**: Easily configure backup assignees for your team
+- **No Errors**: Prevents workflow failures due to invalid assignee usernames
+
 
 ## 📝 Issue Format
 
