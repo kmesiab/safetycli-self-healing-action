@@ -74,10 +74,13 @@ runs:
         # Run Safety scan with API key
         echo "Running Safety CLI scan..."
         # Capture stderr separately to avoid corrupting JSON output
-        if safety --stage cicd scan --output json --continue-on-error > safety-report.json 2> /tmp/safety-errors.log; then
+        safety --stage cicd scan --output json --continue-on-error > safety-report.json 2> /tmp/safety-errors.log
+        SCAN_EXIT_CODE=$?
+        
+        if [ $SCAN_EXIT_CODE -eq 0 ]; then
           echo "✅ Safety scan completed successfully"
         else
-          echo "⚠️  Safety scan exited with code: $?"
+          echo "⚠️  Safety scan exited with code: $SCAN_EXIT_CODE"
           if [ -s /tmp/safety-errors.log ]; then
             echo "Error output:"
             cat /tmp/safety-errors.log

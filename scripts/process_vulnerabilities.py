@@ -258,7 +258,7 @@ def load_safety_report(report_path: Path) -> List[Dict]:
                 return []
             
             # Check if scan failed for other reasons
-            if data.get("reason") == "scan_failed":
+            if not data.get("skipped") and data.get("reason") == "scan_failed":
                 print("⚠️  Safety scan failed to complete")
                 print("This may indicate an invalid API key, network issues, or other scan errors.")
                 print("Check the workflow logs above for more details.")
