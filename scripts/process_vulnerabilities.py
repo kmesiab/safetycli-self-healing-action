@@ -245,16 +245,18 @@ def load_safety_report(report_path: Path) -> List[Dict]:
                 print("   Get your free API key at: https://platform.safetycli.com/cli/auth")
                 return []
             
-            # Handle minimal JSON (from our fallback)
-            if content in ['{}', '{"vulnerabilities":[]}']:
+            # Parse JSON first
+            data = json.loads(content)
+            
+            # Check if it's a minimal/empty report (from our fallback)
+            vulnerabilities = data.get("vulnerabilities", [])
+            if not vulnerabilities and not data.get("metadata"):
+                # This is likely our fallback empty report
                 print("ℹ️  Safety report contains no vulnerabilities")
                 print("This could mean:")
                 print("  - All dependencies are secure (great!)")
                 print("  - Safety CLI was skipped due to missing API key")
                 return []
-            
-            # Parse JSON
-            data = json.loads(content)
             
         # Safety CLI output format
         vulnerabilities = data.get("vulnerabilities", [])

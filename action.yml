@@ -10,7 +10,7 @@ inputs:
     description: 'GitHub token for creating issues and PRs'
     required: true
   safety_api_key:
-    description: 'Safety CLI API key for vulnerability scanning (REQUIRED - get free key at https://platform.safetycli.com/cli/auth)'
+    description: 'Safety CLI API key for vulnerability scanning (Get free key at https://platform.safetycli.com/cli/auth - scanning will be skipped if not provided)'
     required: false
   assign_to_copilot:
     description: 'Whether to attempt assigning issues to GitHub Copilot agent'
@@ -72,11 +72,16 @@ runs:
         
         # Run Safety scan with API key
         echo "Running Safety CLI scan..."
-        if safety --stage cicd scan --output json --continue-on-error > safety-report.json 2>&1; then
+        # Capture stderr separately to avoid corrupting JSON output
+        if safety --stage cicd scan --output json --continue-on-error > safety-report.json 2> /tmp/safety-errors.log; then
           echo "✅ Safety scan completed successfully"
         else
           SCAN_EXIT_CODE=$?
           echo "⚠️  Safety scan exited with code: $SCAN_EXIT_CODE"
+          if [ -s /tmp/safety-errors.log ]; then
+            echo "Error output:"
+            cat /tmp/safety-errors.log
+          fi
           # Check if report was created
           if [ ! -s safety-report.json ]; then
             echo "Safety report is empty or missing. This may indicate:"
