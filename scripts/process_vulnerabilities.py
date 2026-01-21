@@ -248,14 +248,28 @@ def load_safety_report(report_path: Path) -> List[Dict]:
             # Parse JSON first
             data = json.loads(content)
             
+            # Check if scan was skipped due to missing API key
+            if data.get("skipped") and data.get("reason") == "missing_api_key":
+                print("ℹ️  Safety scan was skipped - API key not provided")
+                print("To enable vulnerability scanning:")
+                print("  1. Get a free API key at: https://platform.safetycli.com/cli/auth")
+                print("  2. Add it to your repository secrets as SAFETY_API_KEY")
+                print("  3. Include 'safety_api_key: ${{ secrets.SAFETY_API_KEY }}' in your workflow")
+                return []
+            
+            # Check if scan failed for other reasons
+            if data.get("reason") == "scan_failed":
+                print("⚠️  Safety scan failed to complete")
+                print("This may indicate an invalid API key, network issues, or other scan errors.")
+                print("Check the workflow logs above for more details.")
+                return []
+            
             # Check if it's a minimal/empty report (from our fallback)
             vulnerabilities = data.get("vulnerabilities", [])
             if not vulnerabilities and not data.get("metadata"):
-                # This is likely our fallback empty report
+                # This is likely a successful scan with no vulnerabilities
                 print("ℹ️  Safety report contains no vulnerabilities")
-                print("This could mean:")
-                print("  - All dependencies are secure (great!)")
-                print("  - Safety CLI was skipped due to missing API key")
+                print("All dependencies are secure!")
                 return []
             
         # Safety CLI output format

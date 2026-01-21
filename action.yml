@@ -63,10 +63,11 @@ runs:
           echo "⚠️  WARNING: SAFETY_API_KEY is not set!"
           echo "Safety CLI 3.x requires an API key for vulnerability scanning."
           echo "Please provide the 'safety_api_key' input to enable scanning."
+          echo "Example: Add 'safety_api_key: \${{ secrets.SAFETY_API_KEY }}' under the 'with:' section of your workflow."
           echo "Get your free API key at: https://platform.safetycli.com/cli/auth"
           echo ""
           echo "Creating empty safety report to skip scanning..."
-          echo "{}" > safety-report.json
+          echo '{"vulnerabilities":[],"skipped":true,"reason":"missing_api_key"}' > safety-report.json
           exit 0
         fi
         
@@ -76,21 +77,20 @@ runs:
         if safety --stage cicd scan --output json --continue-on-error > safety-report.json 2> /tmp/safety-errors.log; then
           echo "✅ Safety scan completed successfully"
         else
-          SCAN_EXIT_CODE=$?
-          echo "⚠️  Safety scan exited with code: $SCAN_EXIT_CODE"
+          echo "⚠️  Safety scan exited with code: $?"
           if [ -s /tmp/safety-errors.log ]; then
             echo "Error output:"
             cat /tmp/safety-errors.log
           fi
-          # Check if report was created
-          if [ ! -s safety-report.json ]; then
+          # Check if report was created and is not empty
+          if [ ! -f safety-report.json ] || [ ! -s safety-report.json ]; then
             echo "Safety report is empty or missing. This may indicate:"
             echo "  - Invalid or expired API key"
             echo "  - Network connectivity issues"
             echo "  - No Python dependencies found in the project"
             echo ""
-            echo "Creating empty report structure..."
-            echo '{"vulnerabilities":[]}' > safety-report.json
+            echo "Creating fallback report structure..."
+            echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
           fi
         fi
         
