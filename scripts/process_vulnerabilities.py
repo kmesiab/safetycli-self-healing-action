@@ -225,7 +225,8 @@ class GitHubIssueCreator:
 def load_safety_report(report_path: Path) -> List[Dict]:
     """Load and parse Safety CLI JSON report."""
     if not report_path.exists():
-        print(f"Safety report not found at {report_path}")
+        print(f"❌ Safety report not found at {report_path}")
+        print("This indicates that the Safety CLI scan did not run or failed to create the report.")
         return []
 
     try:
@@ -234,7 +235,22 @@ def load_safety_report(report_path: Path) -> List[Dict]:
             
             # Handle empty file
             if not content:
-                print("Safety report is empty - no vulnerabilities detected or scan failed")
+                print("⚠️  Safety report is empty")
+                print("This typically means:")
+                print("  - Safety CLI API key is missing or invalid")
+                print("  - Safety CLI scan failed to authenticate")
+                print("  - No Python dependencies were found to scan")
+                print("")
+                print("💡 Make sure you have set the SAFETY_API_KEY in your workflow.")
+                print("   Get your free API key at: https://platform.safetycli.com/cli/auth")
+                return []
+            
+            # Handle minimal JSON (from our fallback)
+            if content in ['{}', '{"vulnerabilities":[]}']:
+                print("ℹ️  Safety report contains no vulnerabilities")
+                print("This could mean:")
+                print("  - All dependencies are secure (great!)")
+                print("  - Safety CLI was skipped due to missing API key")
                 return []
             
             # Parse JSON
@@ -242,16 +258,22 @@ def load_safety_report(report_path: Path) -> List[Dict]:
             
         # Safety CLI output format
         vulnerabilities = data.get("vulnerabilities", [])
-        print(f"Successfully parsed {len(vulnerabilities)} vulnerabilities from report")
+        if vulnerabilities:
+            print(f"✅ Successfully parsed {len(vulnerabilities)} vulnerabilities from report")
+        else:
+            print("✅ Safety scan completed - no vulnerabilities found")
         return vulnerabilities
         
     except json.JSONDecodeError as e:
-        print(f"Error parsing JSON from {report_path}: {e}")
+        print(f"❌ Error parsing JSON from {report_path}: {e}")
         print("The scan file may be corrupted, invalid, or Safety CLI encountered an error")
-        print("This can happen if Safety CLI API credits are exhausted or the scan failed")
+        print("This can happen if:")
+        print("  - Safety CLI API key is invalid or expired")
+        print("  - Safety CLI encountered an internal error")
+        print("  - The scan was interrupted")
         return []
     except Exception as e:
-        print(f"Unexpected error loading safety report: {e}")
+        print(f"❌ Unexpected error loading safety report: {e}")
         return []
 
 
