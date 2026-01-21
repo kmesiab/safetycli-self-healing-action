@@ -68,4 +68,5 @@ runs:
         FALLBACK_ASSIGNEE: ${{ inputs.fallback_assignee }}
         SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
       run: |
+        cd ${{ inputs.project_path }}
         python ${{ github.action_path }}/scripts/process_vulnerabilities.py
