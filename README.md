@@ -19,6 +19,7 @@ Self-healing security automation for Python projects using Safety CLI. This GitH
 
 - Python project with `requirements.txt` or `Pipfile`
 - GitHub repository with Issues enabled
+- **Safety CLI API key** (required) - Get your free API key at [Safety CLI](https://platform.safetycli.com/cli/auth)
 - GitHub Copilot enabled on your repository (optional but recommended)
 
 ## 🔧 Usage
@@ -53,6 +54,7 @@ jobs:
         uses: kmesiab/safetycli-self-healing-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          safety_api_key: ${{ secrets.SAFETY_API_KEY }}  # Required for vulnerability scanning
 ```
 
 ### Advanced Configuration
@@ -94,22 +96,26 @@ jobs:
 | Input | Description | Required | Default |
 |-------|-------------|----------|----------|
 | `github_token` | GitHub token for creating issues and PRs | Yes | - |
-| `safety_api_key` | Safety CLI API key for enhanced scanning | No | - |
+| `safety_api_key` | Safety CLI API key for vulnerability scanning | No* | - |
 | `copilot_agent` | GitHub Copilot agent username to assign issues | No | `copilot` |
 | `project_path` | Path to Python project to scan | No | `.` |
 | `severity_threshold` | Minimum severity: `low`, `medium`, `high`, `critical` | No | `medium` |
 | `assign_to_copilot` | Enable/disable Copilot assignment (true/false) | No | `true` |
 | `fallback_assignee` | Fallback GitHub username if Copilot assignment fails | No | `''` (empty) |
 
+*While technically optional, the API key is **required** for vulnerability scanning to work. Without it, the action will skip scanning.
+
 ### Safety API Key
 
-While not required, using a Safety API key provides:
+⚠️ **IMPORTANT**: A Safety API key is **required** for vulnerability scanning with Safety CLI 3.x.
 
-- More detailed vulnerability information
-- Higher rate limits
-- Access to premium vulnerability database
+Get your free API key:
+1. Visit [Safety Platform](https://platform.safetycli.com/cli/auth)
+2. Sign up or log in (free forever for community use)
+3. Copy your API key
+4. Add it to your repository secrets as `SAFETY_API_KEY`
 
-Get your API key from [Safety CLI](https://safetycli.com/) and add it as a repository secret.
+Without an API key, the action will skip vulnerability scanning and create no issues.
 
 ## 🤖 How It Works
 

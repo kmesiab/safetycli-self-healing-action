@@ -10,7 +10,7 @@ inputs:
     description: 'GitHub token for creating issues and PRs'
     required: true
   safety_api_key:
-    description: 'Safety CLI API key for vulnerability scanning'
+    description: 'Safety CLI API key for vulnerability scanning (Get free key at https://platform.safetycli.com/cli/auth - scanning will be skipped if not provided)'
     required: false
   assign_to_copilot:
     description: 'Whether to attempt assigning issues to GitHub Copilot agent'
@@ -57,7 +57,50 @@ runs:
         SAFETY_API_KEY: ${{ inputs.safety_api_key }}
       run: |
         cd ${{ inputs.project_path }}
-        safety --stage cicd scan --output json --continue-on-error > safety-report.json || true
+        
+        # Check if API key is provided
+        if [ -z "$SAFETY_API_KEY" ]; then
+          echo "⚠️  WARNING: SAFETY_API_KEY is not set!"
+          echo "Safety CLI 3.x requires an API key for vulnerability scanning."
+          echo "Please provide the 'safety_api_key' input to enable scanning."
+          echo "Example: Add 'safety_api_key: \${{ secrets.SAFETY_API_KEY }}' under the 'with:' section of your workflow."
+          echo "Get your free API key at: https://platform.safetycli.com/cli/auth"
+          echo ""
+          echo "Creating empty safety report to skip scanning..."
+          echo '{"vulnerabilities":[],"skipped":true,"reason":"missing_api_key"}' > safety-report.json
+          exit 0
+        fi
+        
+        # Run Safety scan with API key
+        echo "Running Safety CLI scan..."
+        # Capture stderr separately to avoid corrupting JSON output
+        safety --stage cicd scan --output json --continue-on-error > safety-report.json 2> /tmp/safety-errors.log
+        SCAN_EXIT_CODE=$?
+        
+        if [ $SCAN_EXIT_CODE -eq 0 ]; then
+          echo "✅ Safety scan completed successfully"
+        else
+          echo "⚠️  Safety scan exited with code: $SCAN_EXIT_CODE"
+          if [ -s /tmp/safety-errors.log ]; then
+            echo "Error output:"
+            cat /tmp/safety-errors.log
+          fi
+          # Check if report was created and is not empty
+          if [ ! -f safety-report.json ] || [ ! -s safety-report.json ]; then
+            echo "Safety report is empty or missing. This may indicate:"
+            echo "  - Invalid or expired API key"
+            echo "  - Network connectivity issues"
+            echo "  - No Python dependencies found in the project"
+            echo ""
+            echo "Creating fallback report structure..."
+            echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
+          fi
+        fi
+        
+        echo "Safety report created at: safety-report.json"
+        if [ -f safety-report.json ]; then
+          echo "Report size: $(wc -c < safety-report.json) bytes"
+        fi
             
     - name: Process vulnerabilities and create issues
       shell: bash
