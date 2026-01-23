@@ -115,13 +115,8 @@ runs:
           # Handle unexpected exit codes
           echo "⚠️  Unexpected exit code from Safety CLI: $SCAN_EXIT_CODE"
           echo "This is not a known Safety CLI exit code. The workflow will fail to avoid masking potential issues."
-          # Check if report was created and is not empty for other exit codes
+          # Create fallback report for unexpected exit codes
           if [ ! -f safety-report.json ] || [ ! -s safety-report.json ]; then
-            echo "Safety report is empty or missing. This may indicate:"
-            echo "  - Invalid or expired API key"
-            echo "  - Network connectivity issues"
-            echo "  - No Python dependencies found in the project"
-            echo ""
             echo "Creating fallback report structure..."
             echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
           fi
