@@ -77,24 +77,50 @@ runs:
         safety --stage cicd scan --output json --continue-on-error > safety-report.json 2> /tmp/safety-errors.log
         SCAN_EXIT_CODE=$?
         
-        if [ $SCAN_EXIT_CODE -eq 0 ]; then
-          echo "✅ Safety scan completed successfully"
+        if [ $SCAN_EXIT_CODE -eq 0 ] || [ $SCAN_EXIT_CODE -eq 64 ]; then
+          echo "✅ Safety scan completed successfully (exit code: $SCAN_EXIT_CODE)"
+          if [ $SCAN_EXIT_CODE -eq 64 ]; then
+            echo "📋 Vulnerabilities found - GitHub issues will be created"
+            # Validate that the safety report was actually created and is not empty for exit code 64
+            if [ ! -f safety-report.json ] || [ ! -s safety-report.json ]; then
+              echo "⚠️  Safety report is empty or missing despite exit code 64. This may indicate:"
+              echo "  - Invalid or expired API key"
+              echo "  - Network connectivity issues"
+              echo "  - No Python dependencies found in the project"
+              echo ""
+              echo "Creating fallback report structure..."
+              echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
+            fi
+          fi
         else
-          echo "⚠️  Safety scan exited with code: $SCAN_EXIT_CODE"
+          echo "❌ Safety scan failed with error code: $SCAN_EXIT_CODE"
           if [ -s /tmp/safety-errors.log ]; then
             echo "Error output:"
             cat /tmp/safety-errors.log
           fi
-          # Check if report was created and is not empty
+          # Only fail on actual errors (65-69)
+          if [ $SCAN_EXIT_CODE -ge 65 ] && [ $SCAN_EXIT_CODE -le 69 ]; then
+            echo "This is a Safety CLI error that requires attention:"
+            case $SCAN_EXIT_CODE in
+              65) echo "  - Invalid API key" ;;
+              66) echo "  - Too many requests (rate limited)" ;;
+              67) echo "  - Unable to load local vulnerability database" ;;
+              68) echo "  - Unable to fetch vulnerability database" ;;
+              69) echo "  - Malformed database" ;;
+            esac
+            # Create fallback report and exit
+            echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
+            exit 1
+          fi
+          # Handle unexpected exit codes
+          echo "⚠️  Unexpected exit code from Safety CLI: $SCAN_EXIT_CODE"
+          echo "This is not a known Safety CLI exit code. The workflow will fail to avoid masking potential issues."
+          # Create fallback report for unexpected exit codes
           if [ ! -f safety-report.json ] || [ ! -s safety-report.json ]; then
-            echo "Safety report is empty or missing. This may indicate:"
-            echo "  - Invalid or expired API key"
-            echo "  - Network connectivity issues"
-            echo "  - No Python dependencies found in the project"
-            echo ""
             echo "Creating fallback report structure..."
             echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
           fi
+          exit 1
         fi
         
         echo "Safety report created at: safety-report.json"
