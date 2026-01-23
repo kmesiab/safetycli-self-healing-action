@@ -81,6 +81,16 @@ runs:
           echo "✅ Safety scan completed successfully (exit code: $SCAN_EXIT_CODE)"
           if [ $SCAN_EXIT_CODE -eq 64 ]; then
             echo "📋 Vulnerabilities found - GitHub issues will be created"
+            # Validate that the safety report was actually created and is not empty for exit code 64
+            if [ ! -f safety-report.json ] || [ ! -s safety-report.json ]; then
+              echo "⚠️  Safety report is empty or missing despite exit code 64. This may indicate:"
+              echo "  - Invalid or expired API key"
+              echo "  - Network connectivity issues"
+              echo "  - No Python dependencies found in the project"
+              echo ""
+              echo "Creating fallback report structure..."
+              echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
+            fi
           fi
         else
           echo "❌ Safety scan failed with error code: $SCAN_EXIT_CODE"
@@ -102,6 +112,9 @@ runs:
             echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
             exit 1
           fi
+          # Handle unexpected exit codes
+          echo "⚠️  Unexpected exit code from Safety CLI: $SCAN_EXIT_CODE"
+          echo "This is not a known Safety CLI exit code. The workflow will fail to avoid masking potential issues."
           # Check if report was created and is not empty for other exit codes
           if [ ! -f safety-report.json ] || [ ! -s safety-report.json ]; then
             echo "Safety report is empty or missing. This may indicate:"
@@ -112,6 +125,7 @@ runs:
             echo "Creating fallback report structure..."
             echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
           fi
+          exit 1
         fi
         
         echo "Safety report created at: safety-report.json"
