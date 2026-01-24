@@ -315,14 +315,9 @@ def load_safety_report(report_path: Path) -> List[Dict]:
                 print("⚠️  Invalid report format - 'vulnerabilities' should be an array")
                 return []
 
-            # Check if it's a minimal/empty report (from our fallback)
-            if not vulnerabilities and not data.get("metadata") and not data.get("report_meta"):
-                # This is likely our fallback structure or a successful scan with no vulnerabilities
-                print("ℹ️  Safety report contains no vulnerabilities")
-                print("All dependencies are secure!")
-                return []
-
-        # Safety CLI output format - return vulnerabilities list
+        # Safety CLI output format - validate and return vulnerabilities list
+        # Note: Empty vulnerabilities list means all dependencies are secure
+        # (fallback cases are already handled via 'skipped' and 'reason' fields above)
         if vulnerabilities:
             # Validate each vulnerability has required fields
             valid_vulns = []
@@ -358,13 +353,27 @@ def load_safety_report(report_path: Path) -> List[Dict]:
 
 
 def filter_by_severity(vulns: List[Dict], threshold: str) -> List[Dict]:
-    """Filter vulnerabilities by severity threshold."""
+    """Filter vulnerabilities by severity threshold.
+
+    Vulnerabilities with unknown severity are always included (conservative approach)
+    to avoid missing potentially critical issues.
+    """
     severity_levels = {"low": 0, "medium": 1, "high": 2, "critical": 3}
     threshold_level = severity_levels.get(threshold.lower(), 1)
 
     filtered = []
     for vuln in vulns:
         severity = extract_severity(vuln)
+
+        # Handle unknown severity explicitly
+        if severity == "unknown":
+            package_name = vuln.get("package_name", "unknown")
+            vuln_id = vuln.get("vulnerability_id", "unknown")
+            print(f"⚠️  Vulnerability {vuln_id} in {package_name} has unknown severity - including by default")
+            # Always include unknown severity (conservative approach)
+            filtered.append(vuln)
+            continue
+
         vuln_level = severity_levels.get(severity, 0)
         if vuln_level >= threshold_level:
             filtered.append(vuln)

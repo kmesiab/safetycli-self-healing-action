@@ -74,15 +74,24 @@ runs:
           echo '{"vulnerabilities":[],"skipped":true,"reason":"missing_api_key"}' > safety-report.json
           exit 0
         fi
-        
+
+        # Validate stage parameter
+        STAGE="${{ inputs.stage }}"
+        if [[ ! "$STAGE" =~ ^(dev|cicd|production)$ ]]; then
+          echo "❌ Invalid stage parameter: '$STAGE'"
+          echo "Valid values are: dev, cicd, production"
+          echo "Defaulting to 'cicd' stage..."
+          STAGE="cicd"
+        fi
+
         # Run Safety scan with API key
         echo "Running Safety CLI scan..."
-        echo "Command: safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage ${{ inputs.stage }} --non-interactive"
+        echo "Command: safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage $STAGE --non-interactive"
         echo ""
 
         # Run scan - let stderr flow to runner logs for visibility
         # JSON output goes directly to file via --save-json (not stdout)
-        safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage ${{ inputs.stage }} --non-interactive
+        safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage $STAGE --non-interactive
         SCAN_EXIT_CODE=$?
 
         echo ""

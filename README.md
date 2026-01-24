@@ -100,7 +100,7 @@ jobs:
 |-------|-------------|----------|----------|
 | `github_token` | GitHub token for creating issues and PRs | Yes | - |
 | `safety_api_key` | Safety CLI API key for vulnerability scanning | No* | - |
-| `stage` | Safety CLI scan stage: `dev`, `cicd`, or `production` | No | `cicd` |
+| `stage` | Safety CLI scan stage: `dev`, `cicd`, or `production` (invalid values default to `cicd`) | No | `cicd` |
 | `copilot_agent` | GitHub Copilot agent username to assign issues | No | `copilot` |
 | `project_path` | Path to Python project to scan | No | `.` |
 | `severity_threshold` | Minimum severity: `low`, `medium`, `high`, `critical` | No | `medium` |
