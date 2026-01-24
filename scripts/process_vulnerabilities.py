@@ -321,14 +321,17 @@ def load_safety_report(report_path: Path) -> List[Dict]:
         if vulnerabilities:
             # Validate each vulnerability has required fields
             valid_vulns = []
-            for vuln in vulnerabilities:
+            for idx, vuln in enumerate(vulnerabilities):
                 if not isinstance(vuln, dict):
-                    print(f"⚠️  Skipping invalid vulnerability entry (not a dict)")
+                    vuln_repr = str(vuln)[:100]  # Trim to 100 chars
+                    print(f"⚠️  Skipping vulnerability at index {idx} (not a dict): {vuln_repr}")
                     continue
 
                 # Check for minimum required fields
                 if not vuln.get("package_name") or not vuln.get("vulnerability_id"):
-                    print(f"⚠️  Skipping vulnerability with missing required fields")
+                    pkg = vuln.get("package_name", "N/A")
+                    vuln_id = vuln.get("vulnerability_id", "N/A")
+                    print(f"⚠️  Skipping vulnerability at index {idx} (missing required fields): package_name={pkg}, vulnerability_id={vuln_id}")
                     continue
 
                 valid_vulns.append(vuln)
