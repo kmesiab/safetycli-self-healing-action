@@ -90,15 +90,15 @@ runs:
 
         # Run Safety scan with API key
         echo "Running Safety CLI scan..."
-        echo "Command: safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage $STAGE --non-interactive"
+        echo "Command: safety --stage $STAGE --disable-optional-telemetry scan --save-as json safety-report.json"
         echo ""
 
         # Disable errexit temporarily to capture exit code (GitHub Actions shells use set -e by default)
         # This allows us to capture exit code 64 (vulnerabilities found) without the shell exiting
         set +e
-        # Run scan - let stderr flow to runner logs for visibility
-        # JSON output goes directly to file via --save-json (not stdout)
-        safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage $STAGE --non-interactive
+        # Run scan - use --save-as (documented flag) instead of --save-json
+        # Note: --stage is a global option and must come before 'scan' subcommand
+        safety --stage $STAGE --disable-optional-telemetry scan --save-as json safety-report.json
         SCAN_EXIT_CODE=$?
         set -e
 
