@@ -393,6 +393,7 @@ def main():
     copilot_agent = os.getenv("COPILOT_AGENT", "copilot")
     fallback_assignee = os.getenv("FALLBACK_ASSIGNEE", "")
     severity_threshold = os.getenv("SEVERITY_THRESHOLD", "medium")
+    max_issues = int(os.getenv("MAX_ISSUES", "10"))
 
     if not github_token:
         print("Error: GITHUB_TOKEN not set")
@@ -419,6 +420,15 @@ def main():
         print("No vulnerabilities meet the severity threshold")
         return
 
+    # Apply max_issues limit
+    vulns_to_process = filtered_vulns[:max_issues]
+    remaining_vulns = filtered_vulns[max_issues:]
+
+    if remaining_vulns:
+        print(f"⚠️  Limiting issue creation to {max_issues} vulnerabilities (out of {len(filtered_vulns)} total)")
+        print(f"   Remaining {len(remaining_vulns)} vulnerabilities will be logged but not converted to issues")
+        print(f"   Increase 'max_issues' input to create more issues")
+
     # Create GitHub issues
     issue_creator = GitHubIssueCreator(
         token=github_token,
@@ -429,7 +439,7 @@ def main():
     )
 
     created_count = 0
-    for vuln in filtered_vulns:
+    for vuln in vulns_to_process:
         try:
             issue_num = issue_creator.create_issue(vuln)
             if issue_num:
@@ -442,6 +452,15 @@ def main():
             print(f"Unexpected error creating issue for {vuln.get('package_name', 'unknown')}: {e}")
 
     print(f"✅ Successfully created {created_count} new security issues")
+
+    # Log remaining vulnerabilities
+    if remaining_vulns:
+        print(f"\n📋 Remaining vulnerabilities not converted to issues ({len(remaining_vulns)}):")
+        for vuln in remaining_vulns:
+            pkg = vuln.get("package_name", "unknown")
+            vuln_id = vuln.get("vulnerability_id", "unknown")
+            severity = extract_severity(vuln).upper()
+            print(f"   - {pkg}: {vuln_id} ({severity})")
 
 
 if __name__ == "__main__":

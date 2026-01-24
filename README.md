@@ -104,10 +104,30 @@ jobs:
 | `copilot_agent` | GitHub Copilot agent username to assign issues | No | `copilot` |
 | `project_path` | Path to Python project to scan | No | `.` |
 | `severity_threshold` | Minimum severity: `low`, `medium`, `high`, `critical` | No | `medium` |
+| `max_issues` | Maximum number of issues to create (prevents spam, remaining vulnerabilities still logged) | No | `10` |
 | `assign_to_copilot` | Enable/disable Copilot assignment (true/false) | No | `true` |
 | `fallback_assignee` | Fallback GitHub username if Copilot assignment fails | No | `''` (empty) |
 
 *While technically optional, the API key is **required** for vulnerability scanning to work. Without it, the action will skip scanning.
+
+### Issue Limits
+
+The `max_issues` parameter prevents issue spam when many vulnerabilities are found:
+
+- **Default**: 10 issues per scan
+- **Recommended**: 10-20 for active projects, 5-10 for new implementations
+- **Use case**: If scanning a legacy codebase with hundreds of vulnerabilities, limit prevents flooding your issue tracker
+
+When the limit is reached:
+- Only the first N vulnerabilities create issues (by severity)
+- Remaining vulnerabilities are logged in the workflow output
+- All vulnerabilities are still recorded in the scan report
+
+**Example**: Set to 20 for larger teams:
+```yaml
+with:
+  max_issues: '20'
+```
 
 ### Safety API Key
 

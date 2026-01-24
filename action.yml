@@ -36,6 +36,10 @@ inputs:
     description: 'Safety CLI scan stage (dev, cicd, production)'
     required: false
     default: 'cicd'
+  max_issues:
+    description: 'Maximum number of issues to create (prevents issue spam, remaining vulnerabilities still logged)'
+    required: false
+    default: '10'
 
 runs:
   using: 'composite'
@@ -154,6 +158,7 @@ runs:
         COPILOT_AGENT: ${{ inputs.copilot_agent }}
         FALLBACK_ASSIGNEE: ${{ inputs.fallback_assignee }}
         SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+        MAX_ISSUES: ${{ inputs.max_issues }}
       run: |
         cd ${{ inputs.project_path }}
         python ${{ github.action_path }}/scripts/process_vulnerabilities.py
