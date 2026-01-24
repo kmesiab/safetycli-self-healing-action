@@ -112,6 +112,8 @@ runs:
               echo '{"vulnerabilities":[],"skipped":false,"reason":"scan_failed"}' > safety-report.json
             fi
           fi
+          # Exit successfully for exit codes 0 or 64 (vulnerabilities found is expected)
+          exit 0
         else
           echo "❌ Safety scan failed with error code: $SCAN_EXIT_CODE"
           # Only fail on actual errors (65-69)
