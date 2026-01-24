@@ -104,6 +104,11 @@ runs:
 
         echo ""
         echo "Safety CLI exit code: $SCAN_EXIT_CODE"
+        echo "Current directory: $(pwd)"
+        echo "Files in current directory:"
+        ls -la
+        echo "Looking for safety-report.json:"
+        find . -name "safety-report.json" -o -name "*.json" 2>/dev/null | head -10
 
         if [ $SCAN_EXIT_CODE -eq 0 ] || [ $SCAN_EXIT_CODE -eq 64 ]; then
           echo "✅ Safety scan completed successfully (exit code: $SCAN_EXIT_CODE)"
