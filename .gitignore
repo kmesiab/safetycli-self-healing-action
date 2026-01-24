@@ -10,6 +10,9 @@ __pycache__/
 # Safety CLI configuration
 .safety-project.ini
 
+# Demo repo (should be in separate directory)
+safetycli-self-healing-action-demo/
+
 # Virtual environments
 venv/
 env/
