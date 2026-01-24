@@ -7,6 +7,9 @@ __pycache__/
 *.json
 .pytest_cache/
 
+# Safety CLI configuration
+.safety-project.ini
+
 # Virtual environments
 venv/
 env/

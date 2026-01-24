@@ -11,6 +11,44 @@ from typing import Dict, List, Optional
 import requests
 
 
+def extract_severity(vuln: Dict) -> str:
+    """Extract severity from vulnerability data, handling both old and new formats.
+
+    New format (Safety CLI 3.x scan):
+        "severity": {
+            "cvssv3": {"base_severity": "HIGH"},
+            "cvssv2": null
+        }
+
+    Old format (Safety CLI 2.x check):
+        "severity": "high"
+
+    Returns severity as lowercase string (e.g., "high", "medium", "low", "critical")
+    """
+    severity_data = vuln.get("severity", "")
+
+    # Handle new nested format
+    if isinstance(severity_data, dict):
+        # Try cvssv3 first
+        cvssv3 = severity_data.get("cvssv3")
+        if cvssv3 and isinstance(cvssv3, dict):
+            base_severity = cvssv3.get("base_severity", "")
+            if base_severity:
+                return base_severity.lower()
+
+        # Fallback to cvssv2
+        cvssv2 = severity_data.get("cvssv2")
+        if cvssv2 and isinstance(cvssv2, dict):
+            base_severity = cvssv2.get("base_severity", "")
+            if base_severity:
+                return base_severity.lower()
+
+        return "unknown"
+
+    # Handle old string format
+    return str(severity_data).lower() if severity_data else "unknown"
+
+
 class GitHubIssueCreator:
     """Create and manage GitHub issues for security vulnerabilities."""
 
@@ -164,7 +202,7 @@ class GitHubIssueCreator:
         package = vuln.get("package_name", "Unknown")
         version = vuln.get("analyzed_version", "Unknown")
         cve = vuln.get("vulnerability_id", "")
-        severity = vuln.get("severity", "unknown").upper()
+        severity = extract_severity(vuln).upper()
         description = vuln.get("advisory", "No description available")
         fixed_versions = vuln.get("fixed_versions", [])
 
@@ -213,7 +251,7 @@ class GitHubIssueCreator:
         """Generate labels for the issue."""
         labels = ["security", "dependencies"]
 
-        severity = vuln.get("severity", "").lower()
+        severity = extract_severity(vuln)
         if severity in ["critical", "high"]:
             labels.append("priority: high")
         elif severity == "medium":
@@ -264,21 +302,47 @@ def load_safety_report(report_path: Path) -> List[Dict]:
                 print("Check the workflow logs above for more details.")
                 return []
             
-            # Check if it's a minimal/empty report (from our fallback)
+            # Validate that we have a proper Safety CLI report structure
+            # New format (Safety CLI 3.x scan) has "vulnerabilities" array
+            if not isinstance(data, dict):
+                print("⚠️  Invalid report format - expected JSON object")
+                return []
+
             vulnerabilities = data.get("vulnerabilities", [])
-            if not vulnerabilities and not data.get("metadata"):
-                # This is likely a successful scan with no vulnerabilities
+
+            # Validate vulnerabilities is actually a list
+            if not isinstance(vulnerabilities, list):
+                print("⚠️  Invalid report format - 'vulnerabilities' should be an array")
+                return []
+
+            # Check if it's a minimal/empty report (from our fallback)
+            if not vulnerabilities and not data.get("metadata") and not data.get("report_meta"):
+                # This is likely our fallback structure or a successful scan with no vulnerabilities
                 print("ℹ️  Safety report contains no vulnerabilities")
                 print("All dependencies are secure!")
                 return []
-            
-        # Safety CLI output format
-        vulnerabilities = data.get("vulnerabilities", [])
+
+        # Safety CLI output format - return vulnerabilities list
         if vulnerabilities:
-            print(f"✅ Successfully parsed {len(vulnerabilities)} vulnerabilities from report")
+            # Validate each vulnerability has required fields
+            valid_vulns = []
+            for vuln in vulnerabilities:
+                if not isinstance(vuln, dict):
+                    print(f"⚠️  Skipping invalid vulnerability entry (not a dict)")
+                    continue
+
+                # Check for minimum required fields
+                if not vuln.get("package_name") or not vuln.get("vulnerability_id"):
+                    print(f"⚠️  Skipping vulnerability with missing required fields")
+                    continue
+
+                valid_vulns.append(vuln)
+
+            print(f"✅ Successfully parsed {len(valid_vulns)} valid vulnerabilities from report")
+            return valid_vulns
         else:
             print("✅ Safety scan completed - no vulnerabilities found")
-        return vulnerabilities
+            return []
         
     except json.JSONDecodeError as e:
         print(f"❌ Error parsing JSON from {report_path}: {e}")
@@ -300,7 +364,7 @@ def filter_by_severity(vulns: List[Dict], threshold: str) -> List[Dict]:
 
     filtered = []
     for vuln in vulns:
-        severity = vuln.get("severity", "low").lower()
+        severity = extract_severity(vuln)
         vuln_level = severity_levels.get(severity, 0)
         if vuln_level >= threshold_level:
             filtered.append(vuln)

@@ -32,6 +32,10 @@ inputs:
     description: 'Minimum severity level to create issues for (low, medium, high, critical)'
     required: false
     default: 'medium'
+  stage:
+    description: 'Safety CLI scan stage (dev, cicd, production)'
+    required: false
+    default: 'cicd'
 
 runs:
   using: 'composite'
@@ -73,10 +77,17 @@ runs:
         
         # Run Safety scan with API key
         echo "Running Safety CLI scan..."
-        # Capture stderr separately to avoid corrupting JSON output
-        safety --stage cicd scan --output json --continue-on-error > safety-report.json 2> /tmp/safety-errors.log
+        echo "Command: safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage ${{ inputs.stage }} --non-interactive"
+        echo ""
+
+        # Run scan - let stderr flow to runner logs for visibility
+        # JSON output goes directly to file via --save-json (not stdout)
+        safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage ${{ inputs.stage }} --non-interactive
         SCAN_EXIT_CODE=$?
-        
+
+        echo ""
+        echo "Safety CLI exit code: $SCAN_EXIT_CODE"
+
         if [ $SCAN_EXIT_CODE -eq 0 ] || [ $SCAN_EXIT_CODE -eq 64 ]; then
           echo "✅ Safety scan completed successfully (exit code: $SCAN_EXIT_CODE)"
           if [ $SCAN_EXIT_CODE -eq 64 ]; then
@@ -94,10 +105,6 @@ runs:
           fi
         else
           echo "❌ Safety scan failed with error code: $SCAN_EXIT_CODE"
-          if [ -s /tmp/safety-errors.log ]; then
-            echo "Error output:"
-            cat /tmp/safety-errors.log
-          fi
           # Only fail on actual errors (65-69)
           if [ $SCAN_EXIT_CODE -ge 65 ] && [ $SCAN_EXIT_CODE -le 69 ]; then
             echo "This is a Safety CLI error that requires attention:"
@@ -127,7 +134,7 @@ runs:
         if [ -f safety-report.json ]; then
           echo "Report size: $(wc -c < safety-report.json) bytes"
         fi
-            
+
     - name: Process vulnerabilities and create issues
       shell: bash
       env:
