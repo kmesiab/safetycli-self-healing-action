@@ -582,7 +582,7 @@ def main():
     fallback_assignee = os.getenv("FALLBACK_ASSIGNEE", "")
     severity_threshold = os.getenv("SEVERITY_THRESHOLD", "medium")
     max_issues = int(os.getenv("MAX_ISSUES", "10"))
-    check_closed_issues = os.getenv("CHECK_CLOSED_ISSUES", "false").lower() in ("true", "1", "yes")
+    check_closed_issues = os.getenv("CHECK_CLOSED_ISSUES", "true").lower() in ("true", "1", "yes")
 
     if not github_token:
         print("Error: GITHUB_TOKEN not set")
