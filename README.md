@@ -16,7 +16,8 @@ The demo repo contains intentionally vulnerable Python packages and automaticall
 ## 🚀 Features
 
 - **Automated Security Scanning**: Runs Safety CLI to detect vulnerabilities in Python dependencies
-- **Intelligent Issue Creation**: Automatically creates detailed GitHub issues for each vulnerability
+- **Intelligent Issue Creation**: Automatically creates detailed GitHub issues grouped by package
+- **Vulnerability Grouping**: Creates one issue per package instead of one per vulnerability, reducing issue spam
 - **AI-Powered Remediation**: Assigns issues to GitHub Copilot for automated security fixes
 - **Severity Filtering**: Configurable severity threshold to focus on critical issues
 - **Duplicate Prevention**: Checks for existing issues before creating new ones
@@ -113,29 +114,72 @@ jobs:
 | `copilot_agent` | GitHub Copilot agent username to assign issues | No | `copilot` |
 | `project_path` | Path to Python project to scan | No | `.` |
 | `severity_threshold` | Minimum severity: `low`, `medium`, `high`, `critical` | No | `medium` |
-| `max_issues` | Maximum number of issues to create (prevents spam, remaining vulnerabilities still logged) | No | `10` |
+| `max_issues` | Maximum number of packages to create issues for (prevents spam, remaining vulnerabilities still logged) | No | `10` |
 | `assign_to_copilot` | Enable/disable Copilot assignment (true/false) | No | `true` |
 | `fallback_assignee` | Fallback GitHub username if Copilot assignment fails | No | `''` (empty) |
+| `check_closed_issues` | Check closed issues when detecting duplicates. `true` = closed issues prevent recreation, `false` = only checks open issues | No | `true` |
 
 *While technically optional, the API key is **required** for vulnerability scanning to work. Without it, the action will skip scanning.
 
+### Vulnerability Grouping
+
+The action groups vulnerabilities by package to reduce issue spam and provide actionable remediation:
+
+- **How it works**: Instead of creating one issue per vulnerability, the action creates one issue per package
+- **Example**: If `django` has 60 vulnerabilities, you get 1 issue titled "[Security] django: 60 vulnerabilities found" instead of 60 separate issues
+- **Benefits**:
+  - More manageable issue tracker
+  - Single upgrade often fixes all vulnerabilities in a package
+  - Clear recommended version shown in the issue
+  - All CVEs listed with links to detailed information
+
+**Issue format** for grouped vulnerabilities:
+- Title: `[Security] {package}: {count} vulnerabilities found`
+- Body includes:
+  - Current version and recommended version
+  - List of all vulnerability IDs with links to Safety Platform
+  - Severity levels for each vulnerability
+  - Alternative secure versions
+
+### Duplicate Detection
+
+The action checks for existing issues before creating new ones to prevent duplicates:
+
+- **Default behavior** (`check_closed_issues: true`):
+  - Checks both **open and closed** issues
+  - Once an issue is closed, it will never be recreated
+  - Use case: Permanently suppress false positives or accepted risks
+
+- **Only check open issues** (`check_closed_issues: false`):
+  - Only checks **open** issues
+  - Allows closed issues to be recreated if the vulnerability still exists
+  - Use case: Close an issue to temporarily "dismiss" it for the current scan; if the vulnerability is still present on a future scan, the issue may be recreated
+
+**Example**: Allow recreation of closed issues:
+```yaml
+with:
+  check_closed_issues: 'false'
+```
+
+**Recommendation**: The default (`true`) prevents issue spam by not recreating closed issues. Set to `false` if you want to temporarily dismiss issues by closing them while still getting alerts if the vulnerability persists in future scans.
+
 ### Issue Limits
 
-The `max_issues` parameter prevents issue spam when many vulnerabilities are found:
+The `max_issues` parameter limits the number of **packages** that create issues:
 
-- **Default**: 10 issues per scan
+- **Default**: 10 packages per scan
 - **Recommended**: 10-20 for active projects, 5-10 for new implementations
-- **Use case**: If scanning a legacy codebase with hundreds of vulnerabilities, limit prevents flooding your issue tracker
+- **Use case**: If scanning a legacy codebase with vulnerabilities in dozens of packages, limit prevents flooding your issue tracker
 
 When the limit is reached:
-- Only the first N vulnerabilities create issues (by severity)
-- Remaining vulnerabilities are logged in the workflow output
+- Only the first N packages create issues (sorted by vulnerability count)
+- Remaining packages and their vulnerabilities are logged in the workflow output
 - All vulnerabilities are still recorded in the scan report
 
 **Example**: Set to 20 for larger teams:
 ```yaml
 with:
-  max_issues: '20'
+  max_issues: '20'  # Limit to 20 packages (not individual vulnerabilities)
 ```
 
 ### Safety API Key
@@ -168,12 +212,14 @@ When Safety CLI detects a registered project:
 
 1. **Scan**: The action runs Safety CLI `scan` command on your Python project using the specified stage
 2. **Analyze**: Parses vulnerability report and filters by severity threshold
-3. **Create Issues**: For each vulnerability:
-   - Creates a detailed GitHub issue with CVE information
-   - Includes package name, version, severity, and description
-   - Adds appropriate labels (security, dependencies, priority)
-4. **Assign to Copilot**: Automatically assigns the issue to GitHub Copilot
-5. **AI Remediation**: Copilot analyzes the issue and creates a PR with fixes
+3. **Group**: Groups vulnerabilities by package (e.g., all django vulnerabilities in one issue)
+4. **Create Issues**: For each affected package:
+   - Creates a detailed GitHub issue with all CVE information for that package
+   - Includes package name, current version, recommended version, and vulnerability count
+   - Lists all vulnerability IDs with links to detailed information
+   - Adds appropriate labels (security, dependencies, priority based on highest severity)
+5. **Assign to Copilot**: Automatically assigns the issue to GitHub Copilot
+6. **AI Remediation**: Copilot analyzes the issue and creates a PR with fixes
 
 ## 🔍 Copilot Detection & Fallback
 
@@ -208,15 +254,35 @@ with:
 
 ## 📝 Issue Format
 
-Created issues include:
+The action creates one issue per package, grouping all vulnerabilities for that package together:
 
-- **Package details**: Name and current version
-- **Vulnerability ID**: Official vulnerability identifier with link to Safety Platform
-- **Vulnerable Spec**: Version range affected by the vulnerability
-- **Full Details Link**: Direct link to complete vulnerability information on Safety Platform
-- **Severity level**: When available (Safety CLI 3.x provides limited details in JSON)
-- **Recommended action**: Upgrade guidance with links to detailed remediation steps
+**Title formats**:
+- Single vulnerability: `[Security] {package}: Security vulnerability detected`
+- Multiple vulnerabilities: `[Security] {package}: Multiple vulnerabilities detected`
+
+**Examples**:
+- `[Security] flask: Security vulnerability detected` (1 vulnerability)
+- `[Security] django: Multiple vulnerabilities detected` (60 vulnerabilities)
+
+The title uses a stable format without the specific vulnerability count to prevent duplicate issues when the count changes between scans (e.g., 60→59). The actual count is shown in the issue body.
+
+**Body includes**:
+
+- **Package details**: Name, current version, and recommended upgrade version
+- **Vulnerability count**: Total number of CVEs affecting this package
+- **Vulnerability list**: Each vulnerability with:
+  - Vulnerability ID with link to Safety Platform
+  - Severity level (HIGH, CRITICAL, MEDIUM, LOW)
+  - Vulnerable version spec
+- **Recommended action**: Specific version to upgrade to, with alternative options
+- **Steps for Copilot**: Clear instructions for AI-powered remediation
 - **Provenance**: Automatically created by SafetyCLI Self-Healing Action
+
+**Labels**:
+- `security` - All security issues
+- `dependencies` - All dependency-related issues
+- `priority: high` - For packages with CRITICAL or HIGH severity vulnerabilities
+- `priority: medium` - For packages with MEDIUM severity vulnerabilities
 
 > **Note**: Safety CLI 3.x changed its JSON output format to provide vulnerability references rather than full details. Issues include direct links to [Safety Platform](https://data.safetycli.com) where complete CVE information, severity scores, and remediation guidance are available.
 

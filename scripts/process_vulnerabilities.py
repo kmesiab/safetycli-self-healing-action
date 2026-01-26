@@ -52,13 +52,15 @@ def extract_severity(vuln: Dict) -> str:
 class GitHubIssueCreator:
     """Create and manage GitHub issues for security vulnerabilities."""
 
-    def __init__(self, token: str, repo: str, assign_to_copilot: bool = True, 
-                 copilot_agent: str = "copilot", fallback_assignee: str = ""):
+    def __init__(self, token: str, repo: str, assign_to_copilot: bool = True,
+                 copilot_agent: str = "copilot", fallback_assignee: str = "",
+                 check_closed_issues: bool = True):
         self.token = token
         self.repo = repo
         self.assign_to_copilot = assign_to_copilot
         self.copilot_agent = copilot_agent
         self.fallback_assignee = fallback_assignee
+        self.check_closed_issues = check_closed_issues
         self.copilot_available = None  # Cache Copilot availability check
         self.api_base = "https://api.github.com"
         self.timeout = 30  # seconds
@@ -119,18 +121,33 @@ class GitHubIssueCreator:
         return issue_number
 
     def _issue_exists(self, title: str) -> bool:
-        """Check if an issue with the same title already exists."""
-        # Use GitHub Search API for efficient searching across all issues
+        """Check if an issue with the same title already exists.
+
+        By default (check_closed_issues=True), checks both open and closed issues to prevent
+        recreation of issues that were intentionally closed.
+
+        If check_closed_issues is False, only checks open issues, allowing closed issues
+        to be recreated if the vulnerability still exists. This enables users to temporarily
+        "dismiss" vulnerabilities by closing issues.
+        """
+        # Use GitHub Search API for efficient searching
         url = f"{self.api_base}/search/issues"
         # Escape quotes in title for search query
         escaped_title = title.replace('"', '\\"')
-        params = {
-            "q": f'repo:{self.repo} is:issue "{escaped_title}" in:title'
-        }
+
+        # Build query based on check_closed_issues setting
+        if self.check_closed_issues:
+            # Check both open and closed issues
+            query = f'repo:{self.repo} is:issue "{escaped_title}" in:title'
+        else:
+            # Only check open issues (default behavior)
+            query = f'repo:{self.repo} is:issue is:open "{escaped_title}" in:title'
+
+        params = {"q": query}
 
         response = requests.get(url, headers=self.headers, params=params, timeout=self.timeout)
         response.raise_for_status()
-        
+
         return response.json()["total_count"] > 0
 
     def _assign_issue(self, issue_number: int) -> None:
@@ -192,30 +209,120 @@ class GitHubIssueCreator:
             print(f"Issue #{issue_number} was created successfully but assignment can be done manually")
 
     def _generate_title(self, vuln: Dict) -> str:
-        """Generate issue title from vulnerability data."""
+        """Generate issue title from vulnerability data.
+
+        Uses a stable title format that doesn't include the vulnerability count
+        to prevent duplicate issues when the count changes between scans.
+        """
         package = vuln.get("package_name", "Unknown")
+
+        # Handle grouped vulnerabilities (multiple vulnerabilities per package)
+        vuln_count = vuln.get("vulnerability_count")
+        if vuln_count:
+            # Use stable title without count to avoid duplicates when count changes
+            if vuln_count == 1:
+                return f"[Security] {package}: Security vulnerability detected"
+            else:
+                return f"[Security] {package}: Multiple vulnerabilities detected"
+
+        # Handle single vulnerability (backward compatibility)
         cve = vuln.get("vulnerability_id", "")
-        return f"[Security] {package}: {cve}"
+        if cve:
+            return f"[Security] {package}: {cve}"
+
+        # Fallback
+        return f"[Security] {package}: Security vulnerability"
 
     def _generate_body(self, vuln: Dict) -> str:
         """Generate issue body with available vulnerability information.
 
         Note: Safety CLI 3.x JSON output has limited details.
         Full vulnerability information is available on Safety Platform.
+
+        Supports both grouped vulnerabilities (multiple CVEs per package) and individual vulnerabilities.
         """
         package = vuln.get("package_name", "Unknown")
         version = vuln.get("analyzed_version", "Unknown")
-        vuln_id = vuln.get("vulnerability_id", "")
-        vulnerable_spec = vuln.get("vulnerable_spec", "")
-        severity = extract_severity(vuln)
-        severity_display = severity.upper() if severity and severity != "unknown" else "See Safety Platform"
 
-        # Build Safety Platform URL for full details
-        safety_url = f"https://data.safetycli.com/v/{vuln_id}/eda"
+        # Check if this is a grouped vulnerability (multiple vulnerabilities per package)
+        vulnerabilities_list = vuln.get("vulnerabilities", [])
+        is_grouped = len(vulnerabilities_list) > 0
 
-        body = f"""## Security Vulnerability Detected
+        if is_grouped:
+            # Generate body for grouped vulnerabilities
+            vuln_count = vuln.get("vulnerability_count", len(vulnerabilities_list))
+            remediation = vuln.get("remediation", {})
+            recommended_version = remediation.get("recommended", "a secure version")
 
-@copilot Please upgrade the `{package}` package to address this security vulnerability.
+            body = f"""## Security Vulnerabilities Detected
+
+@{self.copilot_agent} Please upgrade the `{package}` package to address {vuln_count} security {'vulnerability' if vuln_count == 1 else 'vulnerabilities'}.
+
+### Package Details
+
+- **Package**: `{package}`
+- **Current Version**: `{version}`
+- **Vulnerabilities Found**: {vuln_count}
+- **Recommended Version**: `{recommended_version}`
+
+### Vulnerabilities
+
+"""
+            # List all vulnerabilities
+            for v in vulnerabilities_list:
+                vuln_id = v.get("vulnerability_id") or "unknown"
+                vulnerable_spec = v.get("vulnerable_spec") or ""
+                severity = v.get("severity", "unknown")
+                severity_display = severity.upper() if severity and severity != "unknown" else "See Safety Platform"
+                safety_url = f"https://data.safetycli.com/v/{vuln_id}/eda"
+
+                body += f"""#### [{vuln_id}]({safety_url})
+- **Severity**: {severity_display}
+- **Vulnerable Spec**: `{vulnerable_spec}`
+
+"""
+
+            body += f"""### Recommended Action
+
+Upgrade `{package}` from `{version}` to `{recommended_version}` to fix all {vuln_count} {'vulnerability' if vuln_count == 1 else 'vulnerabilities'}.
+
+"""
+            # Add other recommended versions if available
+            other_recommended = remediation.get("other_recommended", [])
+            if other_recommended:
+                other_versions = ", ".join([f"`{v}`" for v in other_recommended[:5]])  # Show up to 5
+                body += f"""**Alternative versions**: {other_versions}
+
+"""
+
+            body += f"""### Steps for @{self.copilot_agent}
+
+1. Update the `{package}` dependency to `{recommended_version}` or another secure version
+2. Review the vulnerability details by clicking on each vulnerability ID above
+3. Update any related dependencies if needed
+4. Run tests to ensure compatibility
+5. Create a pull request with the security fix
+
+---
+
+**Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
+
+**Provenance**: This issue was automatically created by SafetyCLI Self-Healing Action based on Safety CLI 3.x scan results.
+"""
+
+        else:
+            # Generate body for single vulnerability (backward compatibility)
+            vuln_id = vuln.get("vulnerability_id") or "unknown"
+            vulnerable_spec = vuln.get("vulnerable_spec") or ""
+            severity = extract_severity(vuln)
+            severity_display = severity.upper() if severity and severity != "unknown" else "See Safety Platform"
+
+            # Build Safety Platform URL for full details
+            safety_url = f"https://data.safetycli.com/v/{vuln_id}/eda"
+
+            body = f"""## Security Vulnerability Detected
+
+@{self.copilot_agent} Please upgrade the `{package}` package to address this security vulnerability.
 
 ### Vulnerability Details
 
@@ -237,7 +344,7 @@ This vulnerability affects {package} versions matching `{vulnerable_spec}`.
 Upgrade `{package}` to a version that fixes this vulnerability.
 Check the Safety Platform link above for specific fixed versions and upgrade guidance.
 
-### Steps for @copilot
+### Steps for @{self.copilot_agent}
 
 1. Review the vulnerability details at {safety_url}
 2. Update the `{package}` dependency to a secure version
@@ -247,7 +354,7 @@ Check the Safety Platform link above for specific fixed versions and upgrade gui
 
 ---
 
-**ℹ️ Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
+**Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
 
 **Provenance**: This issue was automatically created by SafetyCLI Self-Healing Action based on Safety CLI 3.x scan results.
 """
@@ -255,10 +362,33 @@ Check the Safety Platform link above for specific fixed versions and upgrade gui
         return body
 
     def _generate_labels(self, vuln: Dict) -> List[str]:
-        """Generate labels for the issue."""
+        """Generate labels for the issue.
+
+        For grouped vulnerabilities, uses the highest severity among all vulnerabilities.
+        """
         labels = ["security", "dependencies"]
 
-        severity = extract_severity(vuln)
+        # Check if this is a grouped vulnerability
+        vulnerabilities_list = vuln.get("vulnerabilities", [])
+        if vulnerabilities_list:
+            # Find the highest severity among all vulnerabilities
+            severity_levels = {"low": 0, "medium": 1, "high": 2, "critical": 3, "unknown": 0}
+            highest_severity = "unknown"
+            highest_level = 0
+
+            for v in vulnerabilities_list:
+                sev = v.get("severity", "unknown")
+                level = severity_levels.get(sev, 0)
+                if level > highest_level:
+                    highest_level = level
+                    highest_severity = sev
+
+            severity = highest_severity
+        else:
+            # Single vulnerability
+            severity = extract_severity(vuln)
+
+        # Add priority label based on severity
         if severity in ["critical", "high"]:
             labels.append("priority: high")
         elif severity == "medium":
@@ -329,6 +459,7 @@ def load_safety_report(report_path: Path) -> List[Dict]:
                             version = spec.get("raw", "").replace(f"{package_name}==", "")
                             vulns_data = spec.get("vulnerabilities", {})
                             known_vulns = vulns_data.get("known_vulnerabilities", [])
+                            remediation = vulns_data.get("remediation", {})
 
                             for vuln in known_vulns:
                                 # Skip ignored vulnerabilities
@@ -345,7 +476,9 @@ def load_safety_report(report_path: Path) -> List[Dict]:
                                     # These fields aren't in Safety CLI 3.x JSON - will use defaults
                                     "severity": None,  # Will be treated as "unknown"
                                     "advisory": f"Vulnerability affects {package_name} {vuln.get('vulnerable_spec')}",
-                                    "fixed_versions": []  # Not provided in new format
+                                    "fixed_versions": [],  # Not provided in new format
+                                    # Add remediation data
+                                    "remediation": remediation
                                 })
 
             if vulnerabilities:
@@ -394,6 +527,69 @@ def filter_by_severity(vulns: List[Dict], threshold: str) -> List[Dict]:
     return filtered
 
 
+def group_vulnerabilities_by_package(vulns: List[Dict]) -> List[Dict]:
+    """Group vulnerabilities by package name.
+
+    Returns a list of package vulnerability groups, where each group contains:
+    - package_name: the package name
+    - analyzed_version: the current version
+    - vulnerabilities: list of all vulnerabilities for this package
+    - vulnerability_count: total number of vulnerabilities
+    - remediation: remediation data (recommended version, etc.)
+    """
+    from collections import defaultdict
+
+    packages = defaultdict(lambda: {
+        "package_name": "",
+        "analyzed_version": "",
+        "vulnerabilities": [],
+        "remediation": {}
+    })
+
+    for vuln in vulns:
+        package_name = vuln.get("package_name", "unknown")
+
+        # Initialize package info if first time seeing it
+        if not packages[package_name]["package_name"]:
+            packages[package_name]["package_name"] = package_name
+            packages[package_name]["analyzed_version"] = vuln.get("analyzed_version", "unknown")
+            packages[package_name]["remediation"] = vuln.get("remediation", {})
+
+        # Add vulnerability to package's list
+        packages[package_name]["vulnerabilities"].append({
+            "vulnerability_id": vuln.get("vulnerability_id"),
+            "vulnerable_spec": vuln.get("vulnerable_spec"),
+            "severity": extract_severity(vuln),
+            "advisory": vuln.get("advisory", "")
+        })
+
+    # Convert to list and add vulnerability count and highest severity
+    severity_levels = {"low": 0, "medium": 1, "high": 2, "critical": 3, "unknown": 0}
+    grouped = []
+    for package_data in packages.values():
+        package_data["vulnerability_count"] = len(package_data["vulnerabilities"])
+
+        # Find highest severity in this package
+        highest_level = 0
+        highest_severity = "unknown"
+        for v in package_data["vulnerabilities"]:
+            sev = v.get("severity", "unknown")
+            level = severity_levels.get(sev, 0)
+            if level > highest_level:
+                highest_level = level
+                highest_severity = sev
+
+        package_data["highest_severity"] = highest_severity
+        package_data["highest_severity_level"] = highest_level
+        grouped.append(package_data)
+
+    # Sort primarily by highest severity (descending), then by vulnerability count (descending)
+    # This prioritizes packages with critical/high severity vulnerabilities even if they have fewer total CVEs
+    grouped.sort(key=lambda x: (x["highest_severity_level"], x["vulnerability_count"]), reverse=True)
+
+    return grouped
+
+
 def main():
     """Main entry point for processing vulnerabilities."""
     # Get environment variables
@@ -404,6 +600,7 @@ def main():
     fallback_assignee = os.getenv("FALLBACK_ASSIGNEE", "")
     severity_threshold = os.getenv("SEVERITY_THRESHOLD", "medium")
     max_issues = int(os.getenv("MAX_ISSUES", "10"))
+    check_closed_issues = os.getenv("CHECK_CLOSED_ISSUES", "true").lower() in ("true", "1", "yes")
 
     if not github_token:
         print("Error: GITHUB_TOKEN not set")
@@ -430,13 +627,28 @@ def main():
         print("No vulnerabilities meet the severity threshold")
         return
 
-    # Apply max_issues limit
-    vulns_to_process = filtered_vulns[:max_issues]
-    remaining_vulns = filtered_vulns[max_issues:]
+    # Group vulnerabilities by package
+    grouped_vulns = group_vulnerabilities_by_package(filtered_vulns)
+    print(f"Grouped into {len(grouped_vulns)} packages")
 
-    if remaining_vulns:
-        print(f"⚠️  Limiting issue creation to {max_issues} vulnerabilities (out of {len(filtered_vulns)} total)")
-        print(f"   Remaining {len(remaining_vulns)} vulnerabilities will be logged but not converted to issues")
+    # Log package summary
+    total_vuln_count = sum(pkg.get("vulnerability_count", 0) for pkg in grouped_vulns)
+    print(f"Package summary (total vulnerabilities: {total_vuln_count}):")
+    for pkg in grouped_vulns[:10]:  # Show first 10 packages
+        pkg_name = pkg.get("package_name", "unknown")
+        vuln_count = pkg.get("vulnerability_count", 0)
+        print(f"  - {pkg_name}: {vuln_count} {'vulnerability' if vuln_count == 1 else 'vulnerabilities'}")
+    if len(grouped_vulns) > 10:
+        print(f"  ... and {len(grouped_vulns) - 10} more packages")
+
+    # Apply max_issues limit (limit packages, not individual vulnerabilities)
+    packages_to_process = grouped_vulns[:max_issues]
+    remaining_packages = grouped_vulns[max_issues:]
+
+    if remaining_packages:
+        remaining_vuln_count = sum(pkg.get("vulnerability_count", 0) for pkg in remaining_packages)
+        print(f"⚠️  Limiting issue creation to {max_issues} packages (out of {len(grouped_vulns)} total)")
+        print(f"   Remaining {len(remaining_packages)} packages with {remaining_vuln_count} vulnerabilities will be logged but not converted to issues")
         print(f"   Increase 'max_issues' input to create more issues")
 
     # Create GitHub issues
@@ -445,32 +657,34 @@ def main():
         repo=github_repo,
         assign_to_copilot=assign_to_copilot,
         copilot_agent=copilot_agent,
-        fallback_assignee=fallback_assignee
+        fallback_assignee=fallback_assignee,
+        check_closed_issues=check_closed_issues
     )
 
     created_count = 0
-    for vuln in vulns_to_process:
+    for pkg in packages_to_process:
         try:
-            issue_num = issue_creator.create_issue(vuln)
+            issue_num = issue_creator.create_issue(pkg)
             if issue_num:
                 created_count += 1
         except requests.exceptions.RequestException as e:
-            print(f"Error creating issue for {vuln.get('package_name', 'unknown')}: {e}")
+            print(f"Error creating issue for {pkg.get('package_name', 'unknown')}: {e}")
             if hasattr(e, 'response') and hasattr(e.response, 'text'):
                 print(f"Response: {e.response.text}")
         except Exception as e:
-            print(f"Unexpected error creating issue for {vuln.get('package_name', 'unknown')}: {e}")
+            print(f"Unexpected error creating issue for {pkg.get('package_name', 'unknown')}: {e}")
 
     print(f"✅ Successfully created {created_count} new security issues")
 
-    # Log remaining vulnerabilities
-    if remaining_vulns:
-        print(f"\n📋 Remaining vulnerabilities not converted to issues ({len(remaining_vulns)}):")
-        for vuln in remaining_vulns:
-            pkg = vuln.get("package_name", "unknown")
-            vuln_id = vuln.get("vulnerability_id", "unknown")
-            severity = extract_severity(vuln).upper()
-            print(f"   - {pkg}: {vuln_id} ({severity})")
+    # Log remaining packages
+    if remaining_packages:
+        remaining_vuln_count = sum(pkg.get("vulnerability_count", 0) for pkg in remaining_packages)
+        print(f"\n📋 Remaining packages not converted to issues ({len(remaining_packages)} packages, {remaining_vuln_count} vulnerabilities):")
+        for pkg in remaining_packages:
+            pkg_name = pkg.get("package_name", "unknown")
+            vuln_count = pkg.get("vulnerability_count", 0)
+            recommended = pkg.get("remediation", {}).get("recommended", "unknown")
+            print(f"   - {pkg_name}: {vuln_count} {'vulnerability' if vuln_count == 1 else 'vulnerabilities'} (recommended: {recommended})")
 
 
 if __name__ == "__main__":

@@ -37,9 +37,13 @@ inputs:
     required: false
     default: 'cicd'
   max_issues:
-    description: 'Maximum number of issues to create (prevents issue spam, remaining vulnerabilities still logged)'
+    description: 'Maximum number of packages to create issues for (prevents issue spam, remaining packages/vulnerabilities are still logged)'
     required: false
     default: '10'
+  check_closed_issues:
+    description: 'Check closed issues when detecting duplicates (true = closing an issue prevents recreation, false = only checks open issues, allowing recreation)'
+    required: false
+    default: 'true'
 
 runs:
   using: 'composite'
@@ -168,6 +172,7 @@ runs:
         FALLBACK_ASSIGNEE: ${{ inputs.fallback_assignee }}
         SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
         MAX_ISSUES: ${{ inputs.max_issues }}
+        CHECK_CLOSED_ISSUES: ${{ inputs.check_closed_issues }}
       run: |
         cd ${{ inputs.project_path }}
         python ${{ github.action_path }}/scripts/process_vulnerabilities.py
