@@ -117,7 +117,7 @@ jobs:
 | `max_issues` | Maximum number of packages to create issues for (prevents spam, remaining vulnerabilities still logged) | No | `10` |
 | `assign_to_copilot` | Enable/disable Copilot assignment (true/false) | No | `true` |
 | `fallback_assignee` | Fallback GitHub username if Copilot assignment fails | No | `''` (empty) |
-| `check_closed_issues` | Check closed issues when detecting duplicates. `true` = closed issues prevent recreation, `false` = only checks open issues | No | `false` |
+| `check_closed_issues` | Check closed issues when detecting duplicates. `true` = closed issues prevent recreation, `false` = only checks open issues | No | `true` |
 
 *While technically optional, the API key is **required** for vulnerability scanning to work. Without it, the action will skip scanning.
 
@@ -145,23 +145,23 @@ The action groups vulnerabilities by package to reduce issue spam and provide ac
 
 The action checks for existing issues before creating new ones to prevent duplicates:
 
-- **Default behavior** (`check_closed_issues: false`):
-  - Only checks **open** issues
-  - Allows closed issues to be recreated if the vulnerability still exists
-  - Use case: Close an issue to temporarily "dismiss" it; it won't be recreated unless you reopen scans
-
-- **Check closed issues** (`check_closed_issues: true`):
+- **Default behavior** (`check_closed_issues: true`):
   - Checks both **open and closed** issues
   - Once an issue is closed, it will never be recreated
   - Use case: Permanently suppress false positives or accepted risks
 
-**Example**: Enable closed issue checking:
+- **Only check open issues** (`check_closed_issues: false`):
+  - Only checks **open** issues
+  - Allows closed issues to be recreated if the vulnerability still exists
+  - Use case: Close an issue to temporarily "dismiss" it for the current scan; if the vulnerability is still present on a future scan, the issue may be recreated
+
+**Example**: Allow recreation of closed issues:
 ```yaml
 with:
-  check_closed_issues: 'true'
+  check_closed_issues: 'false'
 ```
 
-**Recommendation**: Leave as `false` (default) to allow automatic recreation of security issues that remain unresolved. Close issues temporarily to suppress them for the current scan.
+**Recommendation**: The default (`true`) prevents issue spam by not recreating closed issues. Set to `false` if you want to temporarily dismiss issues by closing them while still getting alerts if the vulnerability persists in future scans.
 
 ### Issue Limits
 
@@ -256,9 +256,11 @@ with:
 
 The action creates one issue per package, grouping all vulnerabilities for that package together:
 
-**Title**: `[Security] {package}: {count} vulnerabilities found`
+**Title**: `[Security] {package}: Multiple vulnerabilities detected`
 
-**Example**: `[Security] django: 60 vulnerabilities found`
+**Example**: `[Security] django: Multiple vulnerabilities detected`
+
+The title uses a stable format without the vulnerability count to prevent duplicate issues when the count changes between scans. The actual count is shown in the issue body.
 
 **Body includes**:
 

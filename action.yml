@@ -37,13 +37,13 @@ inputs:
     required: false
     default: 'cicd'
   max_issues:
-    description: 'Maximum number of issues to create (prevents issue spam, remaining vulnerabilities still logged)'
+    description: 'Maximum number of packages to create issues for (prevents issue spam, remaining packages/vulnerabilities are still logged)'
     required: false
     default: '10'
   check_closed_issues:
-    description: 'Check closed issues when detecting duplicates (true = closing an issue prevents recreation, false = only checks open issues)'
+    description: 'Check closed issues when detecting duplicates (true = closing an issue prevents recreation, false = only checks open issues, allowing recreation)'
     required: false
-    default: 'false'
+    default: 'true'
 
 runs:
   using: 'composite'

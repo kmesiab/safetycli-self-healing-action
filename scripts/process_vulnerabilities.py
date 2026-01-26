@@ -209,20 +209,25 @@ class GitHubIssueCreator:
             print(f"Issue #{issue_number} was created successfully but assignment can be done manually")
 
     def _generate_title(self, vuln: Dict) -> str:
-        """Generate issue title from vulnerability data."""
+        """Generate issue title from vulnerability data.
+
+        Uses a stable title format that doesn't include the vulnerability count
+        to prevent duplicate issues when the count changes between scans.
+        """
         package = vuln.get("package_name", "Unknown")
 
         # Handle grouped vulnerabilities (multiple vulnerabilities per package)
         vuln_count = vuln.get("vulnerability_count")
-        if vuln_count and vuln_count > 1:
-            return f"[Security] {package}: {vuln_count} vulnerabilities found"
+        if vuln_count:
+            # Use stable title without count to avoid duplicates when count changes
+            return f"[Security] {package}: Multiple vulnerabilities detected"
 
         # Handle single vulnerability (backward compatibility)
         cve = vuln.get("vulnerability_id", "")
         if cve:
             return f"[Security] {package}: {cve}"
 
-        # Fallback for grouped with single vulnerability
+        # Fallback
         return f"[Security] {package}: Security vulnerability"
 
     def _generate_body(self, vuln: Dict) -> str:
@@ -262,8 +267,8 @@ class GitHubIssueCreator:
 """
             # List all vulnerabilities
             for v in vulnerabilities_list:
-                vuln_id = v.get("vulnerability_id", "unknown")
-                vulnerable_spec = v.get("vulnerable_spec", "")
+                vuln_id = v.get("vulnerability_id") or "unknown"
+                vulnerable_spec = v.get("vulnerable_spec") or ""
                 severity = v.get("severity", "unknown")
                 severity_display = severity.upper() if severity and severity != "unknown" else "See Safety Platform"
                 safety_url = f"https://data.safetycli.com/v/{vuln_id}/eda"
@@ -297,7 +302,7 @@ Upgrade `{package}` from `{version}` to `{recommended_version}` to fix all {vuln
 
 ---
 
-**ℹ️ Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
+**Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
 
 **Provenance**: This issue was automatically created by SafetyCLI Self-Healing Action based on Safety CLI 3.x scan results.
 """
@@ -346,7 +351,7 @@ Check the Safety Platform link above for specific fixed versions and upgrade gui
 
 ---
 
-**ℹ️ Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
+**Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
 
 **Provenance**: This issue was automatically created by SafetyCLI Self-Healing Action based on Safety CLI 3.x scan results.
 """
@@ -610,7 +615,7 @@ def main():
 
     # Log package summary
     total_vuln_count = sum(pkg.get("vulnerability_count", 0) for pkg in grouped_vulns)
-    print(f"Package summary:")
+    print(f"Package summary (total vulnerabilities: {total_vuln_count}):")
     for pkg in grouped_vulns[:10]:  # Show first 10 packages
         pkg_name = pkg.get("package_name", "unknown")
         vuln_count = pkg.get("vulnerability_count", 0)
