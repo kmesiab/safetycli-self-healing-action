@@ -54,7 +54,7 @@ class GitHubIssueCreator:
 
     def __init__(self, token: str, repo: str, assign_to_copilot: bool = True,
                  copilot_agent: str = "copilot", fallback_assignee: str = "",
-                 check_closed_issues: bool = False):
+                 check_closed_issues: bool = True):
         self.token = token
         self.repo = repo
         self.assign_to_copilot = assign_to_copilot
@@ -123,12 +123,12 @@ class GitHubIssueCreator:
     def _issue_exists(self, title: str) -> bool:
         """Check if an issue with the same title already exists.
 
-        By default, only checks open issues, allowing closed issues to be recreated
-        if the vulnerability still exists. This enables users to "dismiss" false positives
-        by closing issues while still getting new issues for unresolved vulnerabilities.
+        By default (check_closed_issues=True), checks both open and closed issues to prevent
+        recreation of issues that were intentionally closed.
 
-        If check_closed_issues is True, also checks closed issues to prevent recreation
-        of issues that were intentionally closed.
+        If check_closed_issues is False, only checks open issues, allowing closed issues
+        to be recreated if the vulnerability still exists. This enables users to temporarily
+        "dismiss" vulnerabilities by closing issues.
         """
         # Use GitHub Search API for efficient searching
         url = f"{self.api_base}/search/issues"
@@ -220,7 +220,10 @@ class GitHubIssueCreator:
         vuln_count = vuln.get("vulnerability_count")
         if vuln_count:
             # Use stable title without count to avoid duplicates when count changes
-            return f"[Security] {package}: Multiple vulnerabilities detected"
+            if vuln_count == 1:
+                return f"[Security] {package}: Security vulnerability detected"
+            else:
+                return f"[Security] {package}: Multiple vulnerabilities detected"
 
         # Handle single vulnerability (backward compatibility)
         cve = vuln.get("vulnerability_id", "")
@@ -253,7 +256,7 @@ class GitHubIssueCreator:
 
             body = f"""## Security Vulnerabilities Detected
 
-@copilot Please upgrade the `{package}` package to address {vuln_count} security {'vulnerability' if vuln_count == 1 else 'vulnerabilities'}.
+@{self.copilot_agent} Please upgrade the `{package}` package to address {vuln_count} security {'vulnerability' if vuln_count == 1 else 'vulnerabilities'}.
 
 ### Package Details
 
@@ -292,7 +295,7 @@ Upgrade `{package}` from `{version}` to `{recommended_version}` to fix all {vuln
 
 """
 
-            body += f"""### Steps for @copilot
+            body += f"""### Steps for @{self.copilot_agent}
 
 1. Update the `{package}` dependency to `{recommended_version}` or another secure version
 2. Review the vulnerability details by clicking on each vulnerability ID above
@@ -319,7 +322,7 @@ Upgrade `{package}` from `{version}` to `{recommended_version}` to fix all {vuln
 
             body = f"""## Security Vulnerability Detected
 
-@copilot Please upgrade the `{package}` package to address this security vulnerability.
+@{self.copilot_agent} Please upgrade the `{package}` package to address this security vulnerability.
 
 ### Vulnerability Details
 
@@ -341,7 +344,7 @@ This vulnerability affects {package} versions matching `{vulnerable_spec}`.
 Upgrade `{package}` to a version that fixes this vulnerability.
 Check the Safety Platform link above for specific fixed versions and upgrade guidance.
 
-### Steps for @copilot
+### Steps for @{self.copilot_agent}
 
 1. Review the vulnerability details at {safety_url}
 2. Update the `{package}` dependency to a secure version
@@ -560,14 +563,29 @@ def group_vulnerabilities_by_package(vulns: List[Dict]) -> List[Dict]:
             "advisory": vuln.get("advisory", "")
         })
 
-    # Convert to list and add vulnerability count
+    # Convert to list and add vulnerability count and highest severity
+    severity_levels = {"low": 0, "medium": 1, "high": 2, "critical": 3, "unknown": 0}
     grouped = []
     for package_data in packages.values():
         package_data["vulnerability_count"] = len(package_data["vulnerabilities"])
+
+        # Find highest severity in this package
+        highest_level = 0
+        highest_severity = "unknown"
+        for v in package_data["vulnerabilities"]:
+            sev = v.get("severity", "unknown")
+            level = severity_levels.get(sev, 0)
+            if level > highest_level:
+                highest_level = level
+                highest_severity = sev
+
+        package_data["highest_severity"] = highest_severity
+        package_data["highest_severity_level"] = highest_level
         grouped.append(package_data)
 
-    # Sort by vulnerability count (descending) to prioritize packages with most vulnerabilities
-    grouped.sort(key=lambda x: x["vulnerability_count"], reverse=True)
+    # Sort primarily by highest severity (descending), then by vulnerability count (descending)
+    # This prioritizes packages with critical/high severity vulnerabilities even if they have fewer total CVEs
+    grouped.sort(key=lambda x: (x["highest_severity_level"], x["vulnerability_count"]), reverse=True)
 
     return grouped
 

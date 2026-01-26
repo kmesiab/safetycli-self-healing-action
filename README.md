@@ -256,11 +256,15 @@ with:
 
 The action creates one issue per package, grouping all vulnerabilities for that package together:
 
-**Title**: `[Security] {package}: Multiple vulnerabilities detected`
+**Title formats**:
+- Single vulnerability: `[Security] {package}: Security vulnerability detected`
+- Multiple vulnerabilities: `[Security] {package}: Multiple vulnerabilities detected`
 
-**Example**: `[Security] django: Multiple vulnerabilities detected`
+**Examples**:
+- `[Security] flask: Security vulnerability detected` (1 vulnerability)
+- `[Security] django: Multiple vulnerabilities detected` (60 vulnerabilities)
 
-The title uses a stable format without the vulnerability count to prevent duplicate issues when the count changes between scans. The actual count is shown in the issue body.
+The title uses a stable format without the specific vulnerability count to prevent duplicate issues when the count changes between scans (e.g., 60→59). The actual count is shown in the issue body.
 
 **Body includes**:
 
