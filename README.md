@@ -5,6 +5,14 @@
 
 Self-healing security automation for Python projects using Safety CLI. This GitHub Action automatically scans your Python dependencies for vulnerabilities, creates GitHub issues for detected CVEs, and assigns them to GitHub Copilot for AI-powered remediation.
 
+## 🎯 Live Demo
+
+See this action in action! Check out our demo repository:
+
+**[safetycli-self-healing-action-demo](https://github.com/kmesiab/safetycli-self-healing-action-demo)**
+
+The demo repo contains intentionally vulnerable Python packages and automatically creates GitHub issues for detected vulnerabilities. Browse the [Issues tab](https://github.com/kmesiab/safetycli-self-healing-action-demo/issues) to see examples of auto-generated security issues.
+
 ## 🚀 Features
 
 - **Automated Security Scanning**: Runs Safety CLI to detect vulnerabilities in Python dependencies
@@ -141,6 +149,20 @@ Get your free API key:
 
 Without an API key, the action will skip vulnerability scanning and create no issues.
 
+### ⚠️ Safety Platform Configuration Warning
+
+**If you configure your project in the Safety Platform dashboard, the platform settings will override this action's input parameters.**
+
+When Safety CLI detects a registered project:
+- Platform scan policies override local settings
+- The platform may ignore `--stage`, policy files, and other CLI flags
+- You'll see this message in logs: `"Scan policy: fetched from Safety Platform, ignoring any local Safety CLI policy files"`
+
+**Recommendation**:
+- For full control over scan behavior, avoid registering projects in the Safety Platform dashboard
+- Use the API key for authentication only, without platform project configuration
+- If you need platform features, be aware that platform settings take precedence over action inputs
+
 ## 🤖 How It Works
 
 1. **Scan**: The action runs Safety CLI `scan` command on your Python project using the specified stage
@@ -188,11 +210,14 @@ with:
 Created issues include:
 
 - **Package details**: Name and current version
-- **CVE identifier**: Official vulnerability ID
-- **Severity level**: Critical, High, Medium, or Low
-- **Description**: Detailed explanation of the vulnerability
-- **Recommended action**: Specific version upgrades or fixes
-- **Provenance**: Link to original scan results
+- **Vulnerability ID**: Official vulnerability identifier with link to Safety Platform
+- **Vulnerable Spec**: Version range affected by the vulnerability
+- **Full Details Link**: Direct link to complete vulnerability information on Safety Platform
+- **Severity level**: When available (Safety CLI 3.x provides limited details in JSON)
+- **Recommended action**: Upgrade guidance with links to detailed remediation steps
+- **Provenance**: Automatically created by SafetyCLI Self-Healing Action
+
+> **Note**: Safety CLI 3.x changed its JSON output format to provide vulnerability references rather than full details. Issues include direct links to [Safety Platform](https://data.safetycli.com) where complete CVE information, severity scores, and remediation guidance are available.
 
 ## 🔐 Permissions
 
@@ -220,7 +245,7 @@ pip install safety requests
 export SAFETY_API_KEY="your-safety-api-key"
 
 # Run Safety scan (new scan command)
-safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage dev --non-interactive
+safety --stage development --disable-optional-telemetry scan --save-as json safety-report.json
 
 # Set environment variables for the processor
 export GITHUB_TOKEN="your-token"
