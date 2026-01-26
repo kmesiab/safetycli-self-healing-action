@@ -309,8 +309,8 @@ Upgrade `{package}` from `{version}` to `{recommended_version}` to fix all {vuln
 
         else:
             # Generate body for single vulnerability (backward compatibility)
-            vuln_id = vuln.get("vulnerability_id", "")
-            vulnerable_spec = vuln.get("vulnerable_spec", "")
+            vuln_id = vuln.get("vulnerability_id") or "unknown"
+            vulnerable_spec = vuln.get("vulnerable_spec") or ""
             severity = extract_severity(vuln)
             severity_display = severity.upper() if severity and severity != "unknown" else "See Safety Platform"
 
