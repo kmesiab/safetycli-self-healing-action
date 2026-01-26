@@ -198,13 +198,20 @@ class GitHubIssueCreator:
         return f"[Security] {package}: {cve}"
 
     def _generate_body(self, vuln: Dict) -> str:
-        """Generate detailed issue body with CVE information."""
+        """Generate issue body with available vulnerability information.
+
+        Note: Safety CLI 3.x JSON output has limited details.
+        Full vulnerability information is available on Safety Platform.
+        """
         package = vuln.get("package_name", "Unknown")
         version = vuln.get("analyzed_version", "Unknown")
-        cve = vuln.get("vulnerability_id", "")
-        severity = extract_severity(vuln).upper()
-        description = vuln.get("advisory", "No description available")
-        fixed_versions = vuln.get("fixed_versions", [])
+        vuln_id = vuln.get("vulnerability_id", "")
+        vulnerable_spec = vuln.get("vulnerable_spec", "")
+        severity = extract_severity(vuln)
+        severity_display = severity.upper() if severity and severity != "unknown" else "See Safety Platform"
+
+        # Build Safety Platform URL for full details
+        safety_url = f"https://data.safetycli.com/v/{vuln_id}/eda"
 
         body = f"""## Security Vulnerability Detected
 
@@ -214,35 +221,35 @@ class GitHubIssueCreator:
 
 - **Package**: `{package}`
 - **Current Version**: `{version}`
-- **CVE**: {cve}
-- **Severity**: {severity}
+- **Vulnerability ID**: [{vuln_id}]({safety_url})
+- **Severity**: {severity_display}
+- **Vulnerable Spec**: `{vulnerable_spec}`
 
 ### Description
 
-{description}
+This vulnerability affects {package} versions matching `{vulnerable_spec}`.
+
+**📋 For complete details** including CVE information, severity scores, and remediation guidance, visit:
+{safety_url}
 
 ### Recommended Action
 
-"""
+Upgrade `{package}` to a version that fixes this vulnerability.
+Check the Safety Platform link above for specific fixed versions and upgrade guidance.
 
-        if fixed_versions:
-            versions_str = ", ".join(fixed_versions)
-            body += f"Upgrade `{package}` to one of these fixed versions: {versions_str}\n\n"
-        else:
-            body += f"Please investigate and upgrade `{package}` to a secure version.\n\n"
+### Steps for @copilot
 
-        body += f"""### Steps for @copilot
-
-1. Update the `{package}` dependency to a secure version
-2. Update any related dependencies if needed
-3. Run tests to ensure compatibility
-4. Create a pull request with the security fix
+1. Review the vulnerability details at {safety_url}
+2. Update the `{package}` dependency to a secure version
+3. Update any related dependencies if needed
+4. Run tests to ensure compatibility
+5. Create a pull request with the security fix
 
 ---
 
 **ℹ️ Note**: If GitHub Copilot is enabled in your repository, you can assign this issue to the Copilot coding agent for automated remediation. Simply assign this issue to `@copilot` or your configured Copilot agent username.
 
-**Provenance**: This issue was automatically created by SafetyCLI Self-Healing Action based on vulnerability scan results.
+**Provenance**: This issue was automatically created by SafetyCLI Self-Healing Action based on Safety CLI 3.x scan results.
 """
 
         return body
@@ -261,7 +268,13 @@ class GitHubIssueCreator:
 
 
 def load_safety_report(report_path: Path) -> List[Dict]:
-    """Load and parse Safety CLI JSON report."""
+    """Load and parse Safety CLI 3.x JSON report.
+
+    Safety CLI 3.x uses a nested structure:
+    scan_results -> projects -> files -> dependencies -> specifications -> vulnerabilities
+
+    This function flattens it into a simpler format for issue creation.
+    """
     if not report_path.exists():
         print(f"❌ Safety report not found at {report_path}")
         print("This indicates that the Safety CLI scan did not run or failed to create the report.")
@@ -270,7 +283,7 @@ def load_safety_report(report_path: Path) -> List[Dict]:
     try:
         with open(report_path) as f:
             content = f.read().strip()
-            
+
             # Handle empty file
             if not content:
                 print("⚠️  Safety report is empty")
@@ -282,76 +295,73 @@ def load_safety_report(report_path: Path) -> List[Dict]:
                 print("💡 Make sure you have set the SAFETY_API_KEY in your workflow.")
                 print("   Get your free API key at: https://platform.safetycli.com/cli/auth")
                 return []
-            
+
             # Parse JSON first
             data = json.loads(content)
-            
-            # Check if scan was skipped due to missing API key
+
+            # Check for fallback structures
             if data.get("skipped") and data.get("reason") == "missing_api_key":
                 print("ℹ️  Safety scan was skipped - API key not provided")
-                print("To enable vulnerability scanning:")
-                print("  1. Get a free API key at: https://platform.safetycli.com/cli/auth")
-                print("  2. Add it to your repository secrets as SAFETY_API_KEY")
-                print("  3. Include 'safety_api_key: ${{ secrets.SAFETY_API_KEY }}' in your workflow")
                 return []
-            
-            # Check if scan failed for other reasons
+
             if not data.get("skipped") and data.get("reason") == "scan_failed":
                 print("⚠️  Safety scan failed to complete")
-                print("This may indicate an invalid API key, network issues, or other scan errors.")
-                print("Check the workflow logs above for more details.")
-                return []
-            
-            # Validate that we have a proper Safety CLI report structure
-            # New format (Safety CLI 3.x scan) has "vulnerabilities" array
-            if not isinstance(data, dict):
-                print("⚠️  Invalid report format - expected JSON object")
                 return []
 
-            vulnerabilities = data.get("vulnerabilities", [])
+            # Parse Safety CLI 3.x structure
+            vulnerabilities = []
 
-            # Validate vulnerabilities is actually a list
-            if not isinstance(vulnerabilities, list):
-                print("⚠️  Invalid report format - 'vulnerabilities' should be an array")
+            if "scan_results" not in data:
+                print("⚠️  Unexpected JSON format - missing 'scan_results'")
                 return []
 
-        # Safety CLI output format - validate and return vulnerabilities list
-        # Note: Empty vulnerabilities list means all dependencies are secure
-        # (fallback cases are already handled via 'skipped' and 'reason' fields above)
-        if vulnerabilities:
-            # Validate each vulnerability has required fields
-            valid_vulns = []
-            for idx, vuln in enumerate(vulnerabilities):
-                if not isinstance(vuln, dict):
-                    vuln_repr = str(vuln)[:100]  # Trim to 100 chars
-                    print(f"⚠️  Skipping vulnerability at index {idx} (not a dict): {vuln_repr}")
-                    continue
+            projects = data["scan_results"].get("projects", [])
 
-                # Check for minimum required fields
-                if not vuln.get("package_name") or not vuln.get("vulnerability_id"):
-                    pkg = vuln.get("package_name", "N/A")
-                    vuln_id = vuln.get("vulnerability_id", "N/A")
-                    print(f"⚠️  Skipping vulnerability at index {idx} (missing required fields): package_name={pkg}, vulnerability_id={vuln_id}")
-                    continue
+            for project in projects:
+                for file_obj in project.get("files", []):
+                    results = file_obj.get("results", {})
+                    dependencies = results.get("dependencies", [])
 
-                valid_vulns.append(vuln)
+                    for dep in dependencies:
+                        package_name = dep.get("name")
 
-            print(f"✅ Successfully parsed {len(valid_vulns)} valid vulnerabilities from report")
-            return valid_vulns
-        else:
-            print("✅ Safety scan completed - no vulnerabilities found")
-            return []
-        
+                        for spec in dep.get("specifications", []):
+                            version = spec.get("raw", "").replace(f"{package_name}==", "")
+                            vulns_data = spec.get("vulnerabilities", {})
+                            known_vulns = vulns_data.get("known_vulnerabilities", [])
+
+                            for vuln in known_vulns:
+                                # Skip ignored vulnerabilities
+                                if vuln.get("ignored"):
+                                    continue
+
+                                # Create a flattened vulnerability object
+                                # Note: Safety CLI 3.x doesn't provide full details in JSON
+                                vulnerabilities.append({
+                                    "package_name": package_name,
+                                    "analyzed_version": version,
+                                    "vulnerability_id": vuln.get("id"),
+                                    "vulnerable_spec": vuln.get("vulnerable_spec"),
+                                    # These fields aren't in Safety CLI 3.x JSON - will use defaults
+                                    "severity": None,  # Will be treated as "unknown"
+                                    "advisory": f"Vulnerability affects {package_name} {vuln.get('vulnerable_spec')}",
+                                    "fixed_versions": []  # Not provided in new format
+                                })
+
+            if vulnerabilities:
+                print(f"✅ Successfully parsed {len(vulnerabilities)} vulnerabilities from Safety CLI 3.x report")
+            else:
+                print("✅ Safety scan completed - no vulnerabilities found")
+
+            return vulnerabilities
+
     except json.JSONDecodeError as e:
         print(f"❌ Error parsing JSON from {report_path}: {e}")
-        print("The scan file may be corrupted, invalid, or Safety CLI encountered an error")
-        print("This can happen if:")
-        print("  - Safety CLI API key is invalid or expired")
-        print("  - Safety CLI encountered an internal error")
-        print("  - The scan was interrupted")
         return []
     except Exception as e:
         print(f"❌ Unexpected error loading safety report: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
