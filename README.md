@@ -63,7 +63,7 @@ jobs:
         uses: actions/checkout@v4
         
       - name: Run SafetyCLI Self-Healing Action
-        uses: kmesiab/safetycli-self-healing-action@v2.1
+        uses: kmesiab/safetycli-self-healing-action@v2.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           safety_api_key: ${{ secrets.SAFETY_API_KEY }}  # Required for vulnerability scanning
@@ -91,7 +91,7 @@ jobs:
         uses: actions/checkout@v4
         
       - name: Run SafetyCLI Self-Healing Action
-        uses: kmesiab/safetycli-self-healing-action@v2.1
+        uses: kmesiab/safetycli-self-healing-action@v2.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           safety_api_key: ${{ secrets.SAFETY_API_KEY }}
