@@ -13,7 +13,8 @@ Self-healing security automation for Python projects using Safety CLI. This GitH
 - **Severity Filtering**: Configurable severity threshold to focus on critical issues
 - **Duplicate Prevention**: Checks for existing issues before creating new ones
 - **Rich Context**: Includes CVE details, severity levels, and recommended fixes
-- - **Intelligent Assignment**: Automatically detects Copilot availability and falls back to human assignees
+- **Intelligent Assignment**: Automatically detects Copilot availability and falls back to human assignees
+- **Flexible Stage Configuration**: Parameterizable scan stage (dev, cicd, production) for different environments
 
 ## 📋 Prerequisites
 
@@ -21,6 +22,8 @@ Self-healing security automation for Python projects using Safety CLI. This GitH
 - GitHub repository with Issues enabled
 - **Safety CLI API key** (required) - Get your free API key at [Safety CLI](https://platform.safetycli.com/cli/auth)
 - GitHub Copilot enabled on your repository (optional but recommended)
+
+> **📌 Note**: This action uses Safety CLI 3.x with the modern `scan` command. The deprecated `check` command is no longer used.
 
 ## 🔧 Usage
 
@@ -83,6 +86,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           safety_api_key: ${{ secrets.SAFETY_API_KEY }}
+          stage: 'cicd'  # Options: dev, cicd, production
           copilot_agent: 'copilot'
           project_path: './src'
           severity_threshold: 'high'
@@ -90,20 +94,40 @@ jobs:
 
 ## ⚙️ Configuration
 
-          assign_to_copilot: 'true'
 ### Inputs
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|----------|
 | `github_token` | GitHub token for creating issues and PRs | Yes | - |
 | `safety_api_key` | Safety CLI API key for vulnerability scanning | No* | - |
+| `stage` | Safety CLI scan stage: `dev`, `cicd`, or `production` (invalid values default to `cicd`) | No | `cicd` |
 | `copilot_agent` | GitHub Copilot agent username to assign issues | No | `copilot` |
 | `project_path` | Path to Python project to scan | No | `.` |
 | `severity_threshold` | Minimum severity: `low`, `medium`, `high`, `critical` | No | `medium` |
+| `max_issues` | Maximum number of issues to create (prevents spam, remaining vulnerabilities still logged) | No | `10` |
 | `assign_to_copilot` | Enable/disable Copilot assignment (true/false) | No | `true` |
 | `fallback_assignee` | Fallback GitHub username if Copilot assignment fails | No | `''` (empty) |
 
 *While technically optional, the API key is **required** for vulnerability scanning to work. Without it, the action will skip scanning.
+
+### Issue Limits
+
+The `max_issues` parameter prevents issue spam when many vulnerabilities are found:
+
+- **Default**: 10 issues per scan
+- **Recommended**: 10-20 for active projects, 5-10 for new implementations
+- **Use case**: If scanning a legacy codebase with hundreds of vulnerabilities, limit prevents flooding your issue tracker
+
+When the limit is reached:
+- Only the first N vulnerabilities create issues (by severity)
+- Remaining vulnerabilities are logged in the workflow output
+- All vulnerabilities are still recorded in the scan report
+
+**Example**: Set to 20 for larger teams:
+```yaml
+with:
+  max_issues: '20'
+```
 
 ### Safety API Key
 
@@ -119,8 +143,8 @@ Without an API key, the action will skip vulnerability scanning and create no is
 
 ## 🤖 How It Works
 
-1. **Scan**: The action runs Safety CLI on your Python project
-2. **Analyze**: Parses vulnerability report and filters by severity
+1. **Scan**: The action runs Safety CLI `scan` command on your Python project using the specified stage
+2. **Analyze**: Parses vulnerability report and filters by severity threshold
 3. **Create Issues**: For each vulnerability:
    - Creates a detailed GitHub issue with CVE information
    - Includes package name, version, severity, and description
@@ -128,7 +152,7 @@ Without an API key, the action will skip vulnerability scanning and create no is
 4. **Assign to Copilot**: Automatically assigns the issue to GitHub Copilot
 5. **AI Remediation**: Copilot analyzes the issue and creates a PR with fixes
 
-6. ## 🔍 Copilot Detection & Fallback
+## 🔍 Copilot Detection & Fallback
 
 The action includes intelligent Copilot detection to ensure issues are properly assigned:
 
@@ -192,18 +216,23 @@ cd safetycli-self-healing-action
 # Install dependencies
 pip install safety requests
 
-# Run Safety scan
-safety check --json --output safety-report.json
+# Set your Safety API key
+export SAFETY_API_KEY="your-safety-api-key"
 
-# Set environment variables
+# Run Safety scan (new scan command)
+safety scan --full-report --save-json safety-report.json --disable-optional-telemetry --stage dev --non-interactive
+
+# Set environment variables for the processor
 export GITHUB_TOKEN="your-token"
 export GITHUB_REPOSITORY="owner/repo"
 export COPILOT_AGENT="copilot"
 export SEVERITY_THRESHOLD="medium"
 
-# Run the script
+# Run the script to process vulnerabilities and create issues
 python scripts/process_vulnerabilities.py
 ```
+
+**Note**: The `check` command is deprecated. Use `scan` command for Safety CLI 3.x.
 
 ## 🤝 Contributing
 
